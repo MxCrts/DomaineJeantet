@@ -19,6 +19,7 @@ import Login from './components/Login'
 import Planning from './components/Planning'
 import Bilan from './components/Bilan'
 import Export from './components/Export'
+import FlagFR from './components/FlagFR'
 import ReservationForm from './components/ReservationForm'
 
 const RESERVATIONS = 'reservations'
@@ -138,7 +139,13 @@ export default function App() {
   return (
     <div className="app">
       <header className="app-header no-print">
-        <div className="app-brand">Domaine Jeantet</div>
+        <div className="app-brand">
+          <span className="brand-name">Domaine Jeantet</span>
+          <span className="brand-owners">
+            Louise &amp; Kevin
+            <FlagFR size={17} />
+          </span>
+        </div>
 
         <nav className="tabs">
           {TABS.map((t) => (

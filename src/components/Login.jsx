@@ -6,6 +6,7 @@ import {
 } from 'firebase/auth'
 import { auth, CONFIG_IS_PLACEHOLDER } from '../firebase'
 import { SPOTS } from '../constants'
+import FlagFR from './FlagFR'
 import SpotIcon from './SpotIcon'
 
 // Traduction des codes d'erreur Firebase en français simple.
@@ -58,6 +59,10 @@ export default function Login() {
     <div className="login-screen">
       <form className="login-card" onSubmit={handleSubmit}>
         <h1 className="login-title">Domaine Jeantet</h1>
+        <p className="login-owners">
+          Louise &amp; Kevin
+          <FlagFR size={20} />
+        </p>
         <p className="login-subtitle">Gestion des réservations</p>
 
         <div className="login-spots" aria-hidden="true">
