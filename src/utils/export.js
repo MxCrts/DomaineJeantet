@@ -7,10 +7,10 @@
 // totalite de son montant.
 // ---------------------------------------------------------------------------
 
-import { SPOTS, paymentLabel, spotName } from '../constants'
+import { PAYMENT_METHODS, SPOTS, paymentLabel, paymentSummaryLabel, spotName } from '../constants'
 import { formatDateFr, nights, toInputValue } from './dates'
 import { formatEur, parseAmount } from './money'
-import { dayNumber, extrasTotal } from './reservations'
+import { dayNumber, extrasTotal, linePayment, paymentSplit, paymentSummary } from './reservations'
 
 /** Rang d'affichage d'un emplacement (ordre de constants.js). */
 function spotOrder(roomId) {
@@ -72,14 +72,28 @@ export function reservationsInRange(reservations, start, end) {
 // Mise a plat
 // ---------------------------------------------------------------------------
 
-/** Detail des extras sur une ligne : « 2 pizzas 18,00 € ; Vin 15,00 € ». */
-export function extrasDetail(extras) {
+/** Nom court d'un moyen de paiement : « carte » / « espèces ». */
+function courtPaiement(value) {
+  const p = PAYMENT_METHODS.find((m) => m.value === value)
+  return p ? p.short.toLowerCase() : ''
+}
+
+/**
+ * Detail des extras sur une ligne, avec le moyen de paiement de chacun :
+ * « 2 pizzas 18,00 € (espèces) ; Vin 15,00 € (carte) ».
+ *
+ * `paiementParDefaut` est celui de la reservation, pour les extras des
+ * anciennes reservations qui n'en portaient pas.
+ */
+export function extrasDetail(extras, paiementParDefaut) {
   if (!Array.isArray(extras) || extras.length === 0) return ''
   return extras
     .map((e) => {
       const label = String((e && e.label) || '').trim()
       const montant = formatEur(parseAmount(e && e.amount))
-      return label ? `${label} ${montant}` : montant
+      const paiement = courtPaiement(linePayment(e && e.payment, paiementParDefaut))
+      const debut = label ? `${label} ${montant}` : montant
+      return `${debut} (${paiement})`
     })
     .join(' ; ')
 }
@@ -99,6 +113,10 @@ export function exportRows(reservations, start, end) {
     )
     .map((r) => {
       const extras = Array.isArray(r.extras) ? r.extras : []
+      const ancien = r.paymentMethod === 'especes' ? 'especes' : 'cb'
+      const basePayment = linePayment(r.basePayment, ancien)
+      const resume = paymentSummary(r)
+      const split = paymentSplit(r)
       return {
         id: r.id,
         roomId: r.roomId,
@@ -108,11 +126,16 @@ export function exportRows(reservations, start, end) {
         departure: r.departure,
         nights: nights(r.arrival, r.departure),
         basePrice: Number(r.basePrice) || 0,
+        basePayment,
+        basePaymentLabel: paymentLabel(basePayment),
         extras,
-        extrasDetail: extrasDetail(extras),
+        extrasDetail: extrasDetail(extras, basePayment),
         extrasTotal: extrasTotal(extras),
-        paymentMethod: r.paymentMethod,
-        payment: paymentLabel(r.paymentMethod) || '—',
+        paymentMethod: resume,
+        payment: paymentSummaryLabel(resume) || '—',
+        isMixte: resume === 'mixte',
+        cb: split.cb,
+        especes: split.especes,
         total: Number(r.total) || 0,
       }
     })
@@ -128,17 +151,18 @@ export function exportSummary(rows) {
       count: 0,
       nights: 0,
       extras: 0,
+      cb: 0,
+      especes: 0,
       total: 0,
     }
     c.count += 1
     c.nights += r.nights
     c.extras += r.extrasTotal
+    c.cb += r.cb
+    c.especes += r.especes
     c.total += r.total
     parSpot.set(r.roomId, c)
   })
-
-  const somme = (predicate) =>
-    rows.filter(predicate).reduce((s, r) => s + r.total, 0)
 
   return {
     spots: [...parSpot.values()].sort((a, b) => spotOrder(a.roomId) - spotOrder(b.roomId)),
@@ -146,8 +170,11 @@ export function exportSummary(rows) {
     nights: rows.reduce((s, r) => s + r.nights, 0),
     extras: rows.reduce((s, r) => s + r.extrasTotal, 0),
     total: rows.reduce((s, r) => s + r.total, 0),
-    cb: somme((r) => r.paymentMethod === 'cb'),
-    especes: somme((r) => r.paymentMethod === 'especes'),
+    // Repartition ligne par ligne : une reservation reglee moitie carte moitie
+    // especes alimente les deux colonnes.
+    cb: rows.reduce((s, r) => s + r.cb, 0),
+    especes: rows.reduce((s, r) => s + r.especes, 0),
+    mixtes: rows.filter((r) => r.isMixte).length,
   }
 }
 
@@ -177,9 +204,12 @@ export const CSV_HEADER = [
   'Date de départ',
   'Nuits',
   'Prix du séjour',
+  'Séjour réglé en',
   'Détail des extras',
   'Total extras',
   'Mode de paiement',
+  'Dont carte',
+  'Dont espèces',
   'Total',
 ]
 
@@ -200,18 +230,29 @@ export function buildCsv(rows, summary, start, end) {
       formatDateFr(r.departure),
       r.nights,
       csvAmount(r.basePrice),
+      r.basePaymentLabel,
       r.extrasDetail,
       csvAmount(r.extrasTotal),
       r.payment,
+      csvAmount(r.cb),
+      csvAmount(r.especes),
       csvAmount(r.total),
     ])
   })
 
   ligne([])
   ligne(['Synthèse par emplacement'])
-  ligne(['Emplacement', 'Réservations', 'Nuits', 'Dont extras', 'Total'])
+  ligne(['Emplacement', 'Réservations', 'Nuits', 'Dont extras', 'Dont carte', 'Dont espèces', 'Total'])
   summary.spots.forEach((s) => {
-    ligne([s.spot, s.count, s.nights, csvAmount(s.extras), csvAmount(s.total)])
+    ligne([
+      s.spot,
+      s.count,
+      s.nights,
+      csvAmount(s.extras),
+      csvAmount(s.cb),
+      csvAmount(s.especes),
+      csvAmount(s.total),
+    ])
   })
 
   ligne([])
@@ -220,10 +261,12 @@ export function buildCsv(rows, summary, start, end) {
     summary.count,
     summary.nights,
     csvAmount(summary.extras),
+    csvAmount(summary.cb),
+    csvAmount(summary.especes),
     csvAmount(summary.total),
   ])
-  ligne(['Dont carte bancaire', '', '', '', csvAmount(summary.cb)])
-  ligne(['Dont espèces', '', '', '', csvAmount(summary.especes)])
+  ligne(['Dont carte bancaire', '', '', '', '', '', csvAmount(summary.cb)])
+  ligne(['Dont espèces', '', '', '', '', '', csvAmount(summary.especes)])
 
   return lignes.join(EOL) + EOL
 }

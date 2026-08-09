@@ -185,6 +185,57 @@ describe('exportSummary', () => {
   })
 })
 
+describe('paiement partagé sur une réservation', () => {
+  // Cas courant du domaine : la location en carte, les extras en espèces.
+  const PARTAGEE = [
+    {
+      id: 'm1',
+      clientName: 'Rossi',
+      roomId: 'ch1',
+      arrival: d(2025, 8, 5),
+      departure: d(2025, 8, 8),
+      basePrice: 320,
+      basePayment: 'cb',
+      extras: [
+        { label: '2 pizzas', amount: 18, payment: 'especes' },
+        { label: 'Bois', amount: 12, payment: 'especes' },
+      ],
+      paymentMethod: 'mixte',
+      total: 350,
+    },
+  ]
+  const rows = exportRows(PARTAGEE, AOUT.start, AOUT.end)
+  const summary = exportSummary(rows)
+
+  it('ventile la réservation dans les deux colonnes', () => {
+    expect(rows[0].cb).toBe(320)
+    expect(rows[0].especes).toBe(30)
+    expect(rows[0].isMixte).toBe(true)
+    expect(rows[0].payment).toBe('Carte + espèces')
+    expect(rows[0].basePaymentLabel).toBe('Carte bancaire')
+  })
+
+  it('le total de la période reste juste, réparti sur les deux moyens', () => {
+    expect(summary.total).toBe(350)
+    expect(summary.cb).toBe(320)
+    expect(summary.especes).toBe(30)
+    expect(summary.cb + summary.especes).toBe(summary.total)
+    expect(summary.mixtes).toBe(1)
+    // Et par emplacement
+    expect(summary.spots[0].cb).toBe(320)
+    expect(summary.spots[0].especes).toBe(30)
+  })
+
+  it('le CSV porte le détail par extra et les deux colonnes', () => {
+    const csv = buildCsv(rows, summary, AOUT.start, AOUT.end).replace(/\s/g, ' ')
+    expect(csv).toContain('2 pizzas 18,00 € (espèces)')
+    expect(csv).toContain('Bois 12,00 € (espèces)')
+    expect(csv).toContain('Carte + espèces;320,00;30,00;350,00')
+    expect(csv).toContain('Dont carte bancaire;;;;;;320,00')
+    expect(csv).toContain('Dont espèces;;;;;;30,00')
+  })
+})
+
 describe('CSV', () => {
   const rows = exportRows(RESAS, AOUT.start, AOUT.end)
   const csv = buildCsv(rows, exportSummary(rows), AOUT.start, AOUT.end)
@@ -196,7 +247,8 @@ describe('CSV', () => {
     const entete = lignes.find((l) => l.startsWith('Emplacement;'))
     expect(entete).toBe(
       'Emplacement;Nom du client;Date d’arrivée;Date de départ;Nuits;Prix du séjour;' +
-        'Détail des extras;Total extras;Mode de paiement;Total'
+        'Séjour réglé en;Détail des extras;Total extras;Mode de paiement;' +
+        'Dont carte;Dont espèces;Total'
     )
     expect(csv).toContain(';73,00')
   })
@@ -212,9 +264,9 @@ describe('CSV', () => {
     expect(lignes[0]).toContain('Domaine Jeantet')
     expect(lignes[0]).toContain('du 01/08/2025 au 31/08/2025')
     expect(csv).toContain('Synthèse par emplacement')
-    expect(csv).toContain('TOTAL GÉNÉRAL;3;6;38,00;233,00')
-    expect(csv).toContain('Dont carte bancaire;;;;113,00')
-    expect(csv).toContain('Dont espèces;;;;120,00')
+    expect(csv).toContain('TOTAL GÉNÉRAL;3;6;38,00;113,00;120,00;233,00')
+    expect(csv).toContain('Dont carte bancaire;;;;;;113,00')
+    expect(csv).toContain('Dont espèces;;;;;;120,00')
   })
 
   it('contient une ligne par réservation de la période, et pas les autres', () => {
@@ -225,6 +277,17 @@ describe('CSV', () => {
     expect(lignesResa).toHaveLength(3)
     expect(lignesResa[0]).toMatch(/^La Bulle;Martin;03\/08\/2025;06\/08\/2025;3;/)
     expect(csv).not.toContain('Hors période')
+  })
+
+  it('détaille le paiement de chaque extra', () => {
+    // formatEur sépare le montant du € par une espace insécable fine :
+    // on normalise les espaces avant de comparer.
+    const ligneDupont = lignes
+      .find((l) => l.startsWith('Chêne;Dupont'))
+      .replace(/\s/g, ' ')
+    // Réservation ancienne : tout hérite du mode de paiement unique.
+    expect(ligneDupont).toContain('2 pizzas 18,00 € (carte)')
+    expect(ligneDupont).toContain('Bouteille de vin 15,00 € (carte)')
   })
 
   it('nomme le fichier avec les deux bornes', () => {

@@ -15,6 +15,7 @@ import {
 
 import { auth, db } from './firebase'
 import { toDate } from './utils/dates'
+import { linePayment } from './utils/reservations'
 import Login from './components/Login'
 import Planning from './components/Planning'
 import Bilan from './components/Bilan'
@@ -66,6 +67,9 @@ export default function App() {
       (snap) => {
         const list = snap.docs.map((d) => {
           const data = d.data()
+          // Réservations saisies avant le paiement ligne par ligne : elles
+          // n'ont qu'un mode de paiement pour tout, dont chaque ligne hérite.
+          const ancien = data.paymentMethod === 'especes' ? 'especes' : 'cb'
           return {
             id: d.id,
             clientName: data.clientName || '',
@@ -73,7 +77,12 @@ export default function App() {
             arrival: toDate(data.arrival),
             departure: toDate(data.departure),
             basePrice: Number(data.basePrice) || 0,
-            extras: Array.isArray(data.extras) ? data.extras : [],
+            basePayment: linePayment(data.basePayment, ancien),
+            extras: (Array.isArray(data.extras) ? data.extras : []).map((e) => ({
+              label: (e && e.label) || '',
+              amount: Number(e && e.amount) || 0,
+              payment: linePayment(e && e.payment, ancien),
+            })),
             paymentMethod: data.paymentMethod || 'cb',
             total: Number(data.total) || 0,
             totalIsManual: !!data.totalIsManual,
@@ -106,7 +115,9 @@ export default function App() {
       arrival: Timestamp.fromDate(values.arrival),
       departure: Timestamp.fromDate(values.departure),
       basePrice: values.basePrice,
+      basePayment: values.basePayment,
       extras: values.extras,
+      // Résumé dérivé des lignes : 'cb', 'especes' ou 'mixte'.
       paymentMethod: values.paymentMethod,
       total: values.total,
       totalIsManual: values.totalIsManual,

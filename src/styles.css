@@ -288,6 +288,96 @@ select.field-input {
   font-weight: 650;
 }
 
+/* --- Choix carte / especes (par ligne) ------------------------------------ */
+
+.pay-toggle {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1.5px solid var(--line-2);
+  border-radius: var(--radius);
+  background: var(--surface-warm);
+}
+
+.pay-option {
+  flex: 1;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 16px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.13s ease, color 0.13s ease, box-shadow 0.13s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pay-option:focus-visible {
+  outline: 3px solid var(--forest);
+  outline-offset: -1px;
+}
+
+.pay-option.is-on {
+  background: var(--surface);
+  color: var(--forest);
+  box-shadow: 0 1px 2px rgba(43, 39, 35, 0.16);
+}
+
+/* Version etroite, sur la ligne d'un extra */
+.pay-toggle.is-compact {
+  padding: 3px;
+  flex: none;
+}
+
+.pay-toggle.is-compact .pay-option {
+  min-height: 46px;
+  padding: 6px 12px;
+  font-size: 15px;
+}
+
+/* Le champ « Réglé en » à côté du prix du séjour */
+.pay-field {
+  max-width: 300px;
+}
+
+.pay-line .field {
+  margin-bottom: 18px;
+}
+
+/* Recapitulatif de ce qui part en caisse */
+.pay-recap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 22px;
+  margin-top: 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  background: #fdfbf7;
+  font-size: 16px;
+  color: var(--ink-2);
+}
+
+.pay-recap.is-mixte {
+  border-color: var(--gold);
+  background: var(--gold-soft);
+  color: #7a5a12;
+}
+
+.pay-recap-title {
+  font-weight: 700;
+}
+
+.pay-recap-part strong {
+  margin-left: 6px;
+  color: var(--ink);
+  font-weight: 700;
+}
+
 /* --- Alertes ------------------------------------------------------------- */
 
 .alert {
@@ -1301,12 +1391,14 @@ button.grid-cell:active {
 
 .extra-row {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 10px;
   margin-bottom: 10px;
 }
 
 .extra-label {
-  flex: 1;
+  flex: 1 1 180px;
   min-width: 0;
 }
 
@@ -1574,27 +1666,33 @@ button.grid-cell:active {
     color: #000;
   }
 
+  /* 12 colonnes sur une A4 paysage : on resserre pour tout faire tenir sans
+     jamais couper un montant. */
   .sheet-table {
-    font-size: 8.5pt;
+    font-size: 8pt;
+    table-layout: auto;
   }
 
   .sheet-table th,
   .sheet-table td {
-    padding: 3.5pt 5pt;
+    padding: 3pt 4pt;
     border: 0.5pt solid #666;
   }
 
   .sheet-table thead th {
     background: #e4e4e4;
-    font-size: 7.5pt;
+    font-size: 7pt;
   }
 
   .sheet-table tbody tr:nth-child(even) td {
     background: #f2f2f2;
   }
 
+  /* La colonne des extras est la seule qui peut passer a la ligne : c'est elle
+     qui absorbe la place restante. */
   .sheet-table .extras-cell {
-    font-size: 8pt;
+    font-size: 7.5pt;
+    min-width: 0;
   }
 
   /* Une ligne ne doit jamais etre coupee en deux pages, et l'en-tete du
@@ -1645,6 +1743,17 @@ button.grid-cell:active {
   }
   .total-field {
     max-width: none;
+  }
+  /* Le choix carte/especes passe sous le prix, sur toute la largeur. */
+  .pay-field {
+    max-width: none;
+  }
+  .extra-label {
+    flex-basis: 100%;
+  }
+  .extra-amount {
+    flex: 1;
+    width: auto;
   }
   .export-actions {
     margin-left: 0;

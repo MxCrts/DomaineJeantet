@@ -1,8 +1,17 @@
 import { useMemo, useRef, useState } from 'react'
-import { PAYMENT_METHODS, SPOTS, SPOT_GROUPS, spotName, spotOrUnknown } from '../constants'
+import { SPOTS, SPOT_GROUPS, paymentLabel, spotName, spotOrUnknown } from '../constants'
 import { formatDateFr, fromInputValue, nights, toInputValue } from '../utils/dates'
 import { formatEur, parseAmount } from '../utils/money'
-import { autoTotal, conflictMessage, extrasTotal, formConflicts } from '../utils/reservations'
+import {
+  autoTotal,
+  conflictMessage,
+  extrasTotal,
+  formConflicts,
+  linePayment,
+  paymentSplit,
+  paymentSummary,
+} from '../utils/reservations'
+import PaymentToggle from './PaymentToggle'
 import SpotIcon from './SpotIcon'
 
 /** Nombre -> texte de saisie français ("12.5" -> "12,5"). */
@@ -14,9 +23,14 @@ function numToInput(n) {
 }
 
 let extraKeySeq = 0
-function makeExtra(label, amount) {
+function makeExtra(label, amount, payment) {
   extraKeySeq += 1
-  return { key: `e${extraKeySeq}`, label: label || '', amount: numToInput(amount) }
+  return {
+    key: `e${extraKeySeq}`,
+    label: label || '',
+    amount: numToInput(amount),
+    payment: payment === 'especes' ? 'especes' : 'cb',
+  }
 }
 
 export default function ReservationForm({ initial, reservations, onSave, onDelete, onClose }) {
@@ -29,10 +43,19 @@ export default function ReservationForm({ initial, reservations, onSave, onDelet
   const [basePrice, setBasePrice] = useState(
     isEdit && initial.basePrice !== undefined ? numToInput(initial.basePrice) : ''
   )
-  const [extras, setExtras] = useState(() =>
-    (initial.extras || []).map((e) => makeExtra(e.label, e.amount))
+  // Mode de paiement du séjour. Une réservation saisie avant l'arrivée du
+  // paiement ligne par ligne n'a que `paymentMethod` : toutes ses lignes en
+  // héritent, sa répartition reste donc identique.
+  const paiementParDefaut = linePayment(
+    initial.basePayment,
+    initial.paymentMethod === 'especes' ? 'especes' : 'cb'
   )
-  const [paymentMethod, setPaymentMethod] = useState(initial.paymentMethod || 'cb')
+  const [basePayment, setBasePayment] = useState(paiementParDefaut)
+  const [extras, setExtras] = useState(() =>
+    (initial.extras || []).map((e) =>
+      makeExtra(e.label, e.amount, linePayment(e.payment, paiementParDefaut))
+    )
+  )
   const [totalIsManual, setTotalIsManual] = useState(!!initial.totalIsManual)
   const [manualTotal, setManualTotal] = useState(
     initial.totalIsManual ? numToInput(initial.total) : ''
@@ -58,6 +81,12 @@ export default function ReservationForm({ initial, reservations, onSave, onDelet
   const computedTotal = autoTotal(basePrice, extras)
   const total = totalIsManual ? parseAmount(manualTotal) : computedTotal
   const totalFieldValue = totalIsManual ? manualTotal : numToInput(computedTotal)
+
+  // Répartition carte / espèces, recalculée à chaque frappe à partir des
+  // lignes. Un total forcé à la main est reporté sur le paiement du séjour.
+  const etatPaiement = { basePrice, basePayment, extras, total }
+  const split = paymentSplit(etatPaiement)
+  const resumePaiement = paymentSummary(etatPaiement)
 
   const nbNights = arrival && departure ? nights(arrival, departure) : 0
   const datesValides = !!arrival && !!departure && departure > arrival
@@ -96,7 +125,12 @@ export default function ReservationForm({ initial, reservations, onSave, onDelet
     setExtras((list) => list.map((e) => (e.key === key ? { ...e, ...patch } : e)))
   }
   function addExtra() {
-    setExtras((list) => [...list, makeExtra('', '')])
+    // Un nouvel extra reprend le paiement du précédent (on enchaîne souvent
+    // plusieurs extras réglés de la même façon), sinon celui du séjour.
+    setExtras((list) => {
+      const precedent = list.length > 0 ? list[list.length - 1].payment : basePayment
+      return [...list, makeExtra('', '', precedent)]
+    })
   }
   function removeExtra(key) {
     setExtras((list) => list.filter((e) => e.key !== key))
@@ -145,10 +179,16 @@ export default function ReservationForm({ initial, reservations, onSave, onDelet
         arrival,
         departure,
         basePrice: parseAmount(basePrice),
+        basePayment,
         extras: extras
           .filter((e) => e.label.trim() !== '' || parseAmount(e.amount) !== 0)
-          .map((e) => ({ label: e.label.trim(), amount: parseAmount(e.amount) })),
-        paymentMethod,
+          .map((e) => ({
+            label: e.label.trim(),
+            amount: parseAmount(e.amount),
+            payment: e.payment,
+          })),
+        // Résumé dérivé des lignes : 'cb', 'especes' ou 'mixte'.
+        paymentMethod: resumePaiement,
         total,
         totalIsManual,
       })
@@ -240,21 +280,6 @@ export default function ReservationForm({ initial, reservations, onSave, onDelet
                 </select>
               </div>
             </label>
-
-            <label className="field">
-              <span className="field-label">Mode de paiement</span>
-              <select
-                className="field-input"
-                value={paymentMethod}
-                onChange={(e) => setPaymentMethod(e.target.value)}
-              >
-                {PAYMENT_METHODS.map((p) => (
-                  <option key={p.value} value={p.value}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
-            </label>
           </div>
 
           <div className="field-row">
@@ -288,16 +313,27 @@ export default function ReservationForm({ initial, reservations, onSave, onDelet
 
           {conflictText && <p className="alert alert-error">{conflictText}</p>}
 
-          <label className="field">
-            <span className="field-label">Prix du séjour (€)</span>
-            <input
-              className="field-input"
-              type="text"
-              inputMode="decimal"
-              value={basePrice}
-              onChange={(e) => setBasePrice(e.target.value)}
-            />
-          </label>
+          <div className="field-row pay-line">
+            <label className="field">
+              <span className="field-label">Prix du séjour (€)</span>
+              <input
+                className="field-input"
+                type="text"
+                inputMode="decimal"
+                value={basePrice}
+                onChange={(e) => setBasePrice(e.target.value)}
+              />
+            </label>
+
+            <div className="field pay-field">
+              <span className="field-label">Réglé en</span>
+              <PaymentToggle
+                value={basePayment}
+                onChange={setBasePayment}
+                label="Mode de paiement du séjour"
+              />
+            </div>
+          </div>
 
           <div className="extras">
             <div className="extras-head">
@@ -325,6 +361,12 @@ export default function ReservationForm({ initial, reservations, onSave, onDelet
                   placeholder="€"
                   value={e.amount}
                   onChange={(ev) => updateExtra(e.key, { amount: ev.target.value })}
+                />
+                <PaymentToggle
+                  value={e.payment}
+                  onChange={(v) => updateExtra(e.key, { payment: v })}
+                  label={`Mode de paiement — ${e.label.trim() || 'cet extra'}`}
+                  compact
                 />
                 <button
                   className="btn btn-icon-danger extra-remove"
@@ -377,6 +419,25 @@ export default function ReservationForm({ initial, reservations, onSave, onDelet
                 </span>
               )}
             </div>
+          </div>
+
+          {/* Ce qui part réellement en caisse : recalculé ligne par ligne. */}
+          <div className={'pay-recap' + (resumePaiement === 'mixte' ? ' is-mixte' : '')}>
+            {resumePaiement === 'mixte' ? (
+              <>
+                <span className="pay-recap-title">Paiement partagé</span>
+                <span className="pay-recap-part">
+                  Carte bancaire <strong>{formatEur(split.cb)}</strong>
+                </span>
+                <span className="pay-recap-part">
+                  Espèces <strong>{formatEur(split.especes)}</strong>
+                </span>
+              </>
+            ) : (
+              <span className="pay-recap-title">
+                Réglé intégralement en {paymentLabel(resumePaiement).toLowerCase()}
+              </span>
+            )}
           </div>
 
           {error && error !== conflictText && <p className="alert alert-error">{error}</p>}

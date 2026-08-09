@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { SPOT_GROUPS } from '../constants'
 import { formatEur } from '../utils/money'
-import { extrasTotal, reservationsOfMonth } from '../utils/reservations'
+import { extrasTotal, paymentSplit, reservationsOfMonth } from '../utils/reservations'
 import MonthNav from './MonthNav'
 import SpotIcon from './SpotIcon'
 
@@ -26,12 +26,21 @@ export default function Bilan({ reservations }) {
     const groups = SPOT_GROUPS.map((g) => ({ ...g, cards: g.spots.map(carte) }))
     const cards = groups.flatMap((g) => g.cards)
 
-    const somme = (predicate) =>
-      ofMonth.filter(predicate).reduce((s, r) => s + (Number(r.total) || 0), 0)
+    // Répartition ligne par ligne : une réservation dont la location est payée
+    // en carte et les extras en espèces alimente les deux colonnes.
+    const encaisse = ofMonth.reduce(
+      (acc, r) => {
+        const part = paymentSplit(r)
+        acc.cb += part.cb
+        acc.especes += part.especes
+        return acc
+      },
+      { cb: 0, especes: 0 }
+    )
 
     const total = cards.reduce((s, c) => s + c.total, 0)
-    const cb = somme((r) => r.paymentMethod === 'cb')
-    const especes = somme((r) => r.paymentMethod === 'especes')
+    const cb = encaisse.cb
+    const especes = encaisse.especes
 
     return {
       groups,

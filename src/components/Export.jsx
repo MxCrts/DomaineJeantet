@@ -148,6 +148,8 @@ export default function Export({ reservations }) {
                 <th>Détail des extras</th>
                 <th className="num">Extras</th>
                 <th>Paiement</th>
+                <th className="num">Carte</th>
+                <th className="num">Espèces</th>
                 <th className="num">Total</th>
               </tr>
             </thead>
@@ -162,7 +164,9 @@ export default function Export({ reservations }) {
                   <td className="num">{formatEur(r.basePrice)}</td>
                   <td className="extras-cell">{r.extrasDetail || '—'}</td>
                   <td className="num">{formatEur(r.extrasTotal)}</td>
-                  <td>{r.payment}</td>
+                  <td className={r.isMixte ? 'strong' : undefined}>{r.payment}</td>
+                  <td className="num">{r.cb ? formatEur(r.cb) : '—'}</td>
+                  <td className="num">{r.especes ? formatEur(r.especes) : '—'}</td>
                   <td className="num strong">{formatEur(r.total)}</td>
                 </tr>
               ))}
@@ -173,12 +177,14 @@ export default function Export({ reservations }) {
             <table className="sheet-table sheet-recap">
               <thead>
                 <tr>
-                  <th colSpan={4}>Synthèse par emplacement</th>
+                  <th colSpan={6}>Synthèse par emplacement</th>
                 </tr>
                 <tr>
                   <th>Emplacement</th>
-                  <th className="num">Réservations</th>
+                  <th className="num">Résas</th>
                   <th className="num">Nuits</th>
+                  <th className="num">Carte</th>
+                  <th className="num">Espèces</th>
                   <th className="num">Total</th>
                 </tr>
               </thead>
@@ -188,6 +194,8 @@ export default function Export({ reservations }) {
                     <td>{s.spot}</td>
                     <td className="num">{s.count}</td>
                     <td className="num">{s.nights}</td>
+                    <td className="num">{s.cb ? formatEur(s.cb) : '—'}</td>
+                    <td className="num">{s.especes ? formatEur(s.especes) : '—'}</td>
                     <td className="num strong">{formatEur(s.total)}</td>
                   </tr>
                 ))}
@@ -197,6 +205,8 @@ export default function Export({ reservations }) {
                   <td className="strong">TOTAL GÉNÉRAL</td>
                   <td className="num strong">{summary.count}</td>
                   <td className="num strong">{summary.nights}</td>
+                  <td className="num strong">{formatEur(summary.cb)}</td>
+                  <td className="num strong">{formatEur(summary.especes)}</td>
                   <td className="num strong">{formatEur(summary.total)}</td>
                 </tr>
               </tfoot>
@@ -221,6 +231,12 @@ export default function Export({ reservations }) {
                   <td>Dont extras</td>
                   <td className="num">{formatEur(summary.extras)}</td>
                 </tr>
+                {summary.mixtes > 0 && (
+                  <tr>
+                    <td>Réservations réglées en deux fois</td>
+                    <td className="num">{summary.mixtes}</td>
+                  </tr>
+                )}
               </tbody>
               <tfoot>
                 <tr>

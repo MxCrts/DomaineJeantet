@@ -5,7 +5,10 @@ import {
   dayNumber,
   findConflicts,
   formConflicts,
+  linePayment,
   overlaps,
+  paymentSplit,
+  paymentSummary,
 } from './reservations'
 
 /** Raccourci : d(2025, 8, 11) = 11 août 2025 (mois en clair, pas en index). */
@@ -237,6 +240,116 @@ describe('blockLabel', () => {
   it('supporte un nom vide', () => {
     expect(blockLabel('', 3)).toBe('(sans nom)')
     expect(blockLabel(null, 1)).toBe('·')
+  })
+})
+
+describe('paymentSplit — carte et espèces sur la même réservation', () => {
+  it('cas courant : la location en carte, les extras en espèces', () => {
+    const r = {
+      basePrice: 320,
+      basePayment: 'cb',
+      extras: [
+        { label: '2 pizzas', amount: 18, payment: 'especes' },
+        { label: 'Bois', amount: 12, payment: 'especes' },
+      ],
+      total: 350,
+    }
+    expect(paymentSplit(r)).toEqual({ cb: 320, especes: 30 })
+    expect(paymentSummary(r)).toBe('mixte')
+  })
+
+  it('tout dans le même moyen de paiement', () => {
+    const r = {
+      basePrice: 100,
+      basePayment: 'especes',
+      extras: [{ amount: 20, payment: 'especes' }],
+      total: 120,
+    }
+    expect(paymentSplit(r)).toEqual({ cb: 0, especes: 120 })
+    expect(paymentSummary(r)).toBe('especes')
+  })
+
+  it('la somme des deux parts est toujours égale au total', () => {
+    const cas = [
+      { basePrice: 320, basePayment: 'cb', extras: [{ amount: 30, payment: 'especes' }], total: 350 },
+      { basePrice: 0, basePayment: 'cb', extras: [], total: 90 },
+      { basePrice: 45.5, basePayment: 'especes', extras: [{ amount: 12.3, payment: 'cb' }], total: 57.8 },
+    ]
+    cas.forEach((r) => {
+      const { cb, especes } = paymentSplit(r)
+      expect(cb + especes).toBeCloseTo(r.total, 2)
+    })
+  })
+
+  it('un total forcé à la main est porté au paiement du séjour', () => {
+    // 320 + 30 = 350, mais on accorde une remise et on tape 330.
+    const r = {
+      basePrice: 320,
+      basePayment: 'cb',
+      extras: [{ amount: 30, payment: 'especes' }],
+      total: 330,
+      totalIsManual: true,
+    }
+    // Les 30 € d'espèces restent dus, la remise porte sur la part carte.
+    expect(paymentSplit(r)).toEqual({ cb: 300, especes: 30 })
+  })
+
+  it('un montant tapé sans détailler le séjour part entier dans son mode', () => {
+    const r = { basePrice: 0, basePayment: 'especes', extras: [], total: 90, totalIsManual: true }
+    expect(paymentSplit(r)).toEqual({ cb: 0, especes: 90 })
+  })
+
+  it('ne produit jamais de montant négatif', () => {
+    // Total forcé plus bas que les seuls extras en espèces.
+    const r = {
+      basePrice: 50,
+      basePayment: 'cb',
+      extras: [{ amount: 40, payment: 'especes' }],
+      total: 20,
+      totalIsManual: true,
+    }
+    const { cb, especes } = paymentSplit(r)
+    expect(cb).toBeGreaterThanOrEqual(0)
+    expect(especes).toBeGreaterThanOrEqual(0)
+    expect(cb + especes).toBeCloseTo(20, 2)
+  })
+
+  it('évite la poussière des virgules flottantes', () => {
+    const r = {
+      basePrice: 0.1,
+      basePayment: 'cb',
+      extras: [{ amount: 0.2, payment: 'cb' }],
+      total: 0.3,
+    }
+    expect(paymentSplit(r)).toEqual({ cb: 0.3, especes: 0 })
+  })
+
+  it('réservation à 0 € : on garde le mode de paiement choisi', () => {
+    expect(paymentSummary({ basePrice: 0, basePayment: 'especes', extras: [], total: 0 })).toBe(
+      'especes'
+    )
+  })
+})
+
+describe('paymentSplit — anciennes réservations', () => {
+  // Saisies avant le paiement ligne par ligne : un seul champ paymentMethod.
+  const ancienne = {
+    basePrice: 40,
+    extras: [{ label: '2 pizzas', amount: 18 }],
+    paymentMethod: 'especes',
+    total: 58,
+  }
+
+  it('toutes les lignes héritent du mode de paiement unique', () => {
+    expect(paymentSplit(ancienne)).toEqual({ cb: 0, especes: 58 })
+    expect(paymentSummary(ancienne)).toBe('especes')
+  })
+
+  it('sans aucune information, on retombe sur la carte', () => {
+    expect(paymentSplit({ basePrice: 60, extras: [], total: 60 })).toEqual({ cb: 60, especes: 0 })
+    expect(linePayment(undefined, undefined)).toBe('cb')
+    expect(linePayment('n’importe quoi', 'especes')).toBe('especes')
+    expect(linePayment('especes', 'cb')).toBe('especes')
   })
 })
 

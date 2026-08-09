@@ -13,6 +13,90 @@ export function autoTotal(basePrice, extras) {
 }
 
 // ---------------------------------------------------------------------------
+// Moyens de paiement
+//
+// Une réservation n'a pas UN mode de paiement mais un par ligne : le séjour a
+// le sien, chaque extra le sien. Cas courant au domaine : la location réglée
+// en carte, les pizzas et le bois en espèces.
+//
+// Les réservations saisies avant cette évolution n'ont qu'un champ unique
+// `paymentMethod` : toutes leurs lignes en héritent, et leur répartition reste
+// donc exactement celle d'avant. Aucune reprise de données n'est nécessaire.
+// ---------------------------------------------------------------------------
+
+/** Arrondi au centime : évite la poussière des additions en virgule flottante. */
+function round2(n) {
+  return Math.round((Number(n) || 0) * 100) / 100
+}
+
+/**
+ * Mode de paiement d'une ligne. `fallback` sert aux anciennes réservations,
+ * où seule la réservation entière portait un mode de paiement.
+ */
+export function linePayment(value, fallback) {
+  if (value === 'cb' || value === 'especes') return value
+  return fallback === 'especes' ? 'especes' : 'cb'
+}
+
+/**
+ * Combien a été réglé en carte, combien en espèces.
+ *
+ * Accepte aussi bien une réservation enregistrée qu'un formulaire en cours de
+ * saisie : on ne lit que basePrice / basePayment / extras / total.
+ *
+ * Le total saisi à la main peut ne pas correspondre à la somme des lignes
+ * (remise, arrondi, ou montant tapé directement sans détailler le séjour) :
+ * l'écart est porté au mode de paiement du SÉJOUR. La somme des deux parts est
+ * donc toujours égale au total, et jamais négative.
+ */
+export function paymentSplit(reservation) {
+  const r = reservation || {}
+  const ancien = r.paymentMethod === 'especes' ? 'especes' : 'cb'
+  const paiementSejour = linePayment(r.basePayment, ancien)
+
+  const parts = { cb: 0, especes: 0 }
+  const ajouter = (methode, montant) => {
+    parts[methode === 'especes' ? 'especes' : 'cb'] += montant
+  }
+
+  ajouter(paiementSejour, parseAmount(r.basePrice))
+  const extras = Array.isArray(r.extras) ? r.extras : []
+  extras.forEach((e) => ajouter(linePayment(e && e.payment, ancien), parseAmount(e && e.amount)))
+
+  // Écart entre le total retenu et la somme des lignes.
+  const total = round2(r.total)
+  ajouter(paiementSejour, round2(total - (parts.cb + parts.especes)))
+
+  parts.cb = round2(parts.cb)
+  parts.especes = round2(parts.especes)
+
+  // Un écart négatif important ne doit jamais produire un montant négatif :
+  // on reporte sur l'autre part pour que le total reste juste.
+  if (parts.cb < 0) {
+    parts.especes = round2(parts.especes + parts.cb)
+    parts.cb = 0
+  }
+  if (parts.especes < 0) {
+    parts.cb = round2(parts.cb + parts.especes)
+    parts.especes = 0
+  }
+  if (parts.cb < 0) parts.cb = 0
+
+  return parts
+}
+
+/** 'cb', 'especes' ou 'mixte' : le résumé affichable d'une réservation. */
+export function paymentSummary(reservation) {
+  const { cb, especes } = paymentSplit(reservation)
+  if (cb > 0 && especes > 0) return 'mixte'
+  if (especes > 0) return 'especes'
+  if (cb > 0) return 'cb'
+  // Réservation à 0 € : on garde le mode de paiement choisi pour le séjour.
+  const r = reservation || {}
+  return linePayment(r.basePayment, r.paymentMethod === 'especes' ? 'especes' : 'cb')
+}
+
+// ---------------------------------------------------------------------------
 // Chevauchements
 // ---------------------------------------------------------------------------
 

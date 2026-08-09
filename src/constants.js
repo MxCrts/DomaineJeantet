@@ -82,12 +82,21 @@ export function spotColor(spotId) {
   return spotOrUnknown(spotId).color
 }
 
+// Moyens de paiement d'UNE LIGNE (le sejour, ou un extra). Une meme
+// reservation peut melanger les deux : la location en carte et les extras en
+// especes, par exemple. Voir paymentSplit() dans utils/reservations.js.
 export const PAYMENT_METHODS = [
-  { value: 'cb', label: 'Carte bancaire' },
-  { value: 'especes', label: 'Espèces' },
+  { value: 'cb', label: 'Carte bancaire', short: 'Carte', tres_court: 'CB' },
+  { value: 'especes', label: 'Espèces', short: 'Espèces', tres_court: 'Esp.' },
 ]
 
 export function paymentLabel(value) {
   const p = PAYMENT_METHODS.find((m) => m.value === value)
   return p ? p.label : ''
+}
+
+/** Comme paymentLabel, mais sait aussi nommer une reservation partagee. */
+export function paymentSummaryLabel(value) {
+  if (value === 'mixte') return 'Carte + espèces'
+  return paymentLabel(value)
 }

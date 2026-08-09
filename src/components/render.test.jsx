@@ -174,6 +174,69 @@ describe('rendu des écrans', () => {
     expect(edition).not.toContain('Impossible :')
   })
 
+  it('le formulaire propose un moyen de paiement par ligne', () => {
+    const html = renderToStaticMarkup(
+      <ReservationForm
+        initial={{ roomId: 'ch1', arrival: new Date(2025, 7, 20), departure: new Date(2025, 7, 21) }}
+        reservations={RESERVATIONS}
+        onSave={noop}
+        onDelete={noop}
+        onClose={noop}
+      />
+    )
+    expect(html).toContain('Réglé en')
+    expect(html).toContain('pay-toggle')
+    // Plus de select global « Mode de paiement »
+    expect(html).not.toContain('Mode de paiement<')
+  })
+
+  it('le formulaire affiche la répartition d’un paiement partagé', () => {
+    // Location en carte, extras en espèces : le cas courant du domaine.
+    const partagee = {
+      id: 'm1',
+      clientName: 'Rossi',
+      roomId: 'ch1',
+      arrival: new Date(2025, 7, 20),
+      departure: new Date(2025, 7, 23),
+      basePrice: 320,
+      basePayment: 'cb',
+      extras: [
+        { label: '2 pizzas', amount: 18, payment: 'especes' },
+        { label: 'Bois', amount: 12, payment: 'especes' },
+      ],
+      paymentMethod: 'mixte',
+      total: 350,
+      totalIsManual: false,
+    }
+    const html = renderToStaticMarkup(
+      <ReservationForm
+        initial={partagee}
+        reservations={[partagee]}
+        onSave={noop}
+        onDelete={noop}
+        onClose={noop}
+      />
+    )
+    expect(html).toContain('Paiement partagé')
+    expect(html).toContain('320,00')
+    expect(html).toContain('30,00')
+    expect(html).not.toContain('Impossible :') // ni conflit avec elle-même
+  })
+
+  it('une réservation ancienne garde son mode de paiement unique', () => {
+    // Aucun champ basePayment, aucun payment sur les extras.
+    const html = renderToStaticMarkup(
+      <ReservationForm
+        initial={{ ...RESERVATIONS[1], paymentMethod: 'especes' }}
+        reservations={RESERVATIONS}
+        onSave={noop}
+        onDelete={noop}
+        onClose={noop}
+      />
+    )
+    expect(html).toContain('Réglé intégralement en espèces')
+  })
+
   it('le formulaire bloque et explique un conflit d’occupation', () => {
     // 8 -> 12 août sur Chêne, alors que Dupont occupe la nuit du 11
     const html = renderToStaticMarkup(
