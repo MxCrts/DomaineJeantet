@@ -88,6 +88,9 @@ export default function App() {
   }, [user])
 
   // --- Écritures -----------------------------------------------------------
+  // Renvoie l'id du document écrit (celui qui existait, ou celui que Firestore
+  // vient d'attribuer). Le formulaire s'en sert pour ne jamais se comparer à
+  // elle-même la réservation qu'il vient de créer.
   const saveReservation = useCallback(async (values) => {
     const payload = {
       clientName: values.clientName,
@@ -103,9 +106,13 @@ export default function App() {
     }
     if (values.id) {
       await updateDoc(doc(db, RESERVATIONS, values.id), payload)
-    } else {
-      await addDoc(collection(db, RESERVATIONS), { ...payload, createdAt: serverTimestamp() })
+      return values.id
     }
+    const ref = await addDoc(collection(db, RESERVATIONS), {
+      ...payload,
+      createdAt: serverTimestamp(),
+    })
+    return ref.id
   }, [])
 
   const removeReservation = useCallback(async (id) => {

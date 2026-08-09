@@ -67,6 +67,35 @@ describe('rendu des écrans', () => {
     expect(html).toContain('grid-column:4 / 7')
   })
 
+  it('le planning groupe les lignes et pose les couleurs des emplacements', () => {
+    const html = renderToStaticMarkup(<Planning reservations={CE_MOIS} onOpenForm={noop} />)
+    // Deux bandes de groupe, dans l'ordre
+    expect(html.indexOf('Emplacements')).toBeLessThan(html.indexOf('Hébergements'))
+    expect(html).toContain('grid-group-label')
+    // Fond teinté + barre latérale : la couleur de l'emplacement est posée en
+    // variable CSS sur le bloc, plus en couleur de fond saturée.
+    expect(html).toContain('--spot-color:#2F6B3C')
+    expect(html).toContain('--spot-tint:#DCE9DD')
+    expect(html).not.toContain('background-color:#2F6B3C')
+  })
+
+  it('un séjour d’une seule nuit est réduit aux initiales, jamais tronqué au hasard', () => {
+    const html = renderToStaticMarkup(<Planning reservations={CE_MOIS} onOpenForm={noop} />)
+    // Dupont occupe la seule nuit du 11 : bloc étroit -> "Du", nom complet
+    // conservé dans l'infobulle.
+    expect(html).toContain('title="Dupont — Chêne"')
+    expect(html).toContain('grid-block is-short')
+    expect(html).toContain('>Du</span>')
+    // Martin tient sur trois nuits : son nom s'affiche en entier.
+    expect(html).toContain('>Martin</span>')
+  })
+
+  it('le planning annonce joliment un mois sans réservation', () => {
+    const html = renderToStaticMarkup(<Planning reservations={[]} onOpenForm={noop} />)
+    expect(html).toContain('planning-empty')
+    expect(html).toContain('le domaine est tout à vous')
+  })
+
   it('le bilan affiche le total général, la répartition et une carte par emplacement', () => {
     const html = renderToStaticMarkup(<Bilan reservations={CE_MOIS} />)
     expect(html).toContain('Total général du mois')
@@ -75,6 +104,15 @@ describe('rendu des écrans', () => {
     expect(html).toContain('La Bulle')
     expect(html).toContain('178,00') // 58 + 120
     expect(html).toContain('2 réservations')
+  })
+
+  it('le bilan regroupe les cartes sous les deux titres', () => {
+    const html = renderToStaticMarkup(<Bilan reservations={CE_MOIS} />)
+    expect(html).toContain('bilan-group-title')
+    expect(html).toContain('Emplacements')
+    expect(html).toContain('Hébergements')
+    // Sous-total du groupe « Hébergements » : les 120 € de La Bulle
+    expect(html).toContain('120,00')
   })
 
   it('le formulaire distingue création et modification', () => {
@@ -90,6 +128,9 @@ describe('rendu des écrans', () => {
     expect(creation).toContain('Nouvelle réservation')
     expect(creation).toContain('Emplacement')
     expect(creation).not.toContain('Impossible :')
+    // Le select est groupé
+    expect(creation).toContain('<optgroup label="Emplacements">')
+    expect(creation).toContain('<optgroup label="Hébergements">')
 
     const edition = renderToStaticMarkup(
       <ReservationForm

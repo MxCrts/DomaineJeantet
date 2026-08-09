@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react'
-import { PAYMENT_METHODS, SPOTS, getSpot, spotName } from '../constants'
+import { useMemo, useRef, useState } from 'react'
+import { PAYMENT_METHODS, SPOTS, SPOT_GROUPS, spotName, spotOrUnknown } from '../constants'
 import { formatDateFr, fromInputValue, nights, toInputValue } from '../utils/dates'
 import { formatEur, parseAmount } from '../utils/money'
-import { autoTotal, conflictMessage, extrasTotal, findConflicts } from '../utils/reservations'
+import { autoTotal, conflictMessage, extrasTotal, formConflicts } from '../utils/reservations'
 import SpotIcon from './SpotIcon'
 
 /** Nombre -> texte de saisie français ("12.5" -> "12,5"). */
@@ -42,9 +42,18 @@ export default function ReservationForm({ initial, reservations, onSave, onDelet
   const [busy, setBusy] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
+  // Id attribué par Firestore à une réservation qu'on vient de créer : à partir
+  // de là elle est traitée comme une réservation existante, donc exclue du
+  // contrôle de conflit.
+  const [savedId, setSavedId] = useState(null)
+  // Drapeau synchrone : passe à true AVANT l'écriture, sans attendre un rendu.
+  // C'est lui qui neutralise le contrôle pendant que Firestore répercute le
+  // document tout juste créé (onSnapshot arrive avant la fin de l'await).
+  const savingRef = useRef(false)
+
   const arrival = fromInputValue(arrivalStr)
   const departure = fromInputValue(departureStr)
-  const spot = getSpot(roomId) || SPOTS[0]
+  const spot = spotOrUnknown(roomId)
 
   const computedTotal = autoTotal(basePrice, extras)
   const total = totalIsManual ? parseAmount(manualTotal) : computedTotal
@@ -53,11 +62,20 @@ export default function ReservationForm({ initial, reservations, onSave, onDelet
   const nbNights = arrival && departure ? nights(arrival, departure) : 0
   const datesValides = !!arrival && !!departure && departure > arrival
 
-  // Conflit d'occupation : BLOQUANT. Recalculé à chaque frappe.
+  // Conflit d'occupation : BLOQUANT. Recalculé à chaque frappe, et à chaque
+  // fois que la liste des réservations change (onSnapshot). Une fois
+  // l'enregistrement lancé puis accepté, plus aucun conflit n'est signalé.
   const conflicts = useMemo(() => {
     if (!datesValides) return []
-    return findConflicts(reservations, { id: initial.id, roomId, arrival, departure })
-  }, [reservations, initial.id, roomId, arrivalStr, departureStr, datesValides])
+    return formConflicts(reservations, {
+      id: initial.id,
+      savedId,
+      roomId,
+      arrival,
+      departure,
+      saving: savingRef.current || busy,
+    })
+  }, [reservations, initial.id, savedId, roomId, arrivalStr, departureStr, datesValides, busy])
 
   const conflictText = conflictMessage(spotName(roomId), conflicts)
   const saveBloque = conflicts.length > 0
@@ -101,21 +119,27 @@ export default function ReservationForm({ initial, reservations, onSave, onDelet
       return
     }
     // Dernière vérification avant écriture : le conflit interdit d'enregistrer.
-    const conflitsMaintenant = findConflicts(reservations, {
+    const conflitsMaintenant = formConflicts(reservations, {
       id: initial.id,
+      savedId,
       roomId,
       arrival,
       departure,
+      saving: false,
     })
     if (conflitsMaintenant.length > 0) {
       setError(conflictMessage(spotName(roomId), conflitsMaintenant))
       return
     }
 
+    // À partir d'ici l'enregistrement est accepté : on coupe le contrôle de
+    // conflit AVANT d'écrire, sinon le document renvoyé par Firestore pendant
+    // l'attente se retrouve comparé à lui-même.
+    savingRef.current = true
     setBusy(true)
     try {
-      await onSave({
-        id: initial.id,
+      const id = await onSave({
+        id: savedId || initial.id,
         clientName: clientName.trim(),
         roomId,
         arrival,
@@ -128,9 +152,14 @@ export default function ReservationForm({ initial, reservations, onSave, onDelet
         total,
         totalIsManual,
       })
+      // Enregistrement accepté : on retient l'id attribué (la réservation ne
+      // peut plus se voir elle-même), on efface toute erreur, et on ferme.
+      if (id) setSavedId(id)
+      setError('')
       onClose()
     } catch (err) {
       console.error(err)
+      savingRef.current = false
       setError('Enregistrement impossible. Vérifiez la connexion Internet puis réessayez.')
       setBusy(false)
     }
@@ -184,19 +213,29 @@ export default function ReservationForm({ initial, reservations, onSave, onDelet
           <div className="field-row">
             <label className="field">
               <span className="field-label">Emplacement</span>
-              <div className="select-with-icon" style={{ '--spot-color': spot.color }}>
+              <div
+                className="select-with-icon"
+                style={{ '--spot-color': spot.color, '--spot-tint': spot.tint }}
+              >
                 <span className="select-icon">
                   <SpotIcon type={spot.icon} size={26} />
                 </span>
                 <select
-                  className="field-input"
+                  className="field-input select-spot"
                   value={roomId}
                   onChange={(e) => setRoomId(e.target.value)}
                 >
-                  {SPOTS.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
+                  {SPOT_GROUPS.map((g) => (
+                    <optgroup key={g.id} label={g.label}>
+                      {g.spots.map((s) => (
+                        // La pastille colorée devant le nom : les navigateurs
+                        // qui savent teinter une option le font, les autres
+                        // affichent simplement le nom.
+                        <option key={s.id} value={s.id} style={{ color: s.ink }}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </optgroup>
                   ))}
                 </select>
               </div>

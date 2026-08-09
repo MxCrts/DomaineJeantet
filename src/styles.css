@@ -38,10 +38,16 @@
   --shadow-md: 0 2px 6px rgba(43, 39, 35, 0.07), 0 12px 30px rgba(43, 39, 35, 0.09);
 
   /* Grille du planning */
-  --spot-col: 178px;
+  --spot-col: 176px;
   --day-w: 40px;
-  --head-h: 58px;
-  --row-h: 66px;
+  --head-h: 64px;
+  --row-h: 74px;
+  --group-h: 30px;
+
+  /* Separateurs du planning : presque invisibles a l'interieur d'un groupe,
+     nets entre deux groupes. */
+  --grid-line: #f3eee5;
+  --grid-line-v: #f1ebe0;
 }
 
 * {
@@ -265,9 +271,21 @@ select.field-input {
   width: 56px;
   flex: none;
   border-radius: var(--radius);
-  background: var(--surface);
+  background: var(--spot-tint);
   color: var(--spot-color);
   border: 1.5px solid var(--spot-color);
+  transition: background-color 0.13s ease, border-color 0.13s ease, color 0.13s ease;
+}
+
+/* Les optgroup du select : titres de groupe lisibles dans la liste native. */
+.select-spot optgroup {
+  font-weight: 800;
+  font-style: normal;
+  color: var(--ink-2);
+}
+
+.select-spot option {
+  font-weight: 650;
 }
 
 /* --- Alertes ------------------------------------------------------------- */
@@ -471,6 +489,23 @@ select.field-input {
   background: var(--surface);
   box-shadow: var(--shadow-sm);
   -webkit-overflow-scrolling: touch;
+  /* Barre de defilement discrete : presente quand elle sert, jamais tapageuse */
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+}
+
+.planning-scroll::-webkit-scrollbar {
+  height: 11px;
+}
+
+.planning-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.planning-scroll::-webkit-scrollbar-thumb {
+  background: var(--line-2);
+  border: 3px solid var(--surface);
+  border-radius: 999px;
 }
 
 /* width:100% (et non max-content) : les colonnes ne peuvent pas s'elargir a
@@ -481,40 +516,58 @@ select.field-input {
   width: 100%;
 }
 
+/* Colonne figee a gauche ---------------------------------------------------- */
+
 .grid-corner,
 .grid-spot {
   position: sticky;
   left: 0;
-  z-index: 3;
   display: flex;
   align-items: center;
   background: var(--surface);
   border-right: 1px solid var(--line-2);
-  border-bottom: 1px solid var(--line);
 }
 
 .grid-corner {
-  z-index: 4;
+  z-index: 6;
   justify-content: center;
   background: var(--surface-warm);
   border-bottom: 1px solid var(--line-2);
   border-top-left-radius: var(--radius-lg);
   font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
+  font-weight: 800;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-2);
 }
 
 .grid-spot {
+  z-index: 5;
   gap: 12px;
-  padding: 0 12px 0 14px;
+  padding: 0 12px 0 13px;
   border-left: 5px solid var(--spot-color);
+  border-bottom: 1px solid var(--grid-line);
+}
+
+.grid-spot.is-last-of-group {
+  border-bottom-color: var(--line);
+}
+
+.grid-spot.is-last-row {
+  border-bottom: 0;
+  border-bottom-left-radius: var(--radius-lg);
 }
 
 .grid-spot-icon {
-  color: var(--spot-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 38px;
   flex: none;
+  border-radius: 11px;
+  background: var(--spot-tint);
+  color: var(--spot-color);
 }
 
 .grid-spot-name {
@@ -525,39 +578,129 @@ select.field-input {
   text-overflow: ellipsis;
 }
 
+/* Bandes de groupe ---------------------------------------------------------- */
+
+.grid-group {
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  background: var(--surface-warm);
+  border-bottom: 1px solid var(--line-2);
+}
+
+.grid-group-label {
+  position: sticky;
+  left: 0;
+  padding: 0 14px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.17em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+/* En-tetes de jours --------------------------------------------------------- */
+
 .grid-head {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1px;
+  gap: 3px;
+  padding-bottom: 4px;
   background: var(--surface-warm);
   border-left: 1px solid var(--line);
   border-bottom: 1px solid var(--line-2);
 }
 
+.grid-head.is-last-col {
+  border-top-right-radius: var(--radius-lg);
+}
+
 .head-letter {
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
+  line-height: 1;
   text-transform: uppercase;
   color: var(--ink-3);
 }
 
 .head-day {
-  font-size: 18px;
+  font-size: 21px;
   font-weight: 700;
   line-height: 1;
+  letter-spacing: -0.02em;
 }
+
+.head-month {
+  position: absolute;
+  bottom: 4px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  line-height: 1;
+  text-transform: uppercase;
+  color: var(--forest);
+}
+
+.grid-head.is-saturday {
+  background: #f2ebdf;
+}
+
+.grid-head.is-sunday {
+  background: #ede5d6;
+}
+
+.grid-head.is-sunday .head-letter {
+  color: #9a5b3c;
+}
+
+/* 1er du mois : un filet vertical marque le debut de la periode */
+.grid-head.is-month-start {
+  box-shadow: inset 2px 0 0 var(--line-2);
+}
+
+.grid-head.is-today {
+  background: var(--gold-soft);
+  box-shadow: inset 0 3px 0 var(--gold);
+}
+
+.grid-head.is-today .head-day {
+  color: #7a5a12;
+}
+
+/* Cases ---------------------------------------------------------------------- */
 
 .grid-cell {
   border: 0;
-  border-left: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
+  border-left: 1px solid var(--grid-line-v);
+  border-bottom: 1px solid var(--grid-line);
   background: var(--surface);
   padding: 0;
-  transition: background-color 0.1s ease;
+  transition: background-color 0.13s ease, box-shadow 0.13s ease;
   -webkit-tap-highlight-color: transparent;
+}
+
+.grid-cell.is-saturday {
+  background: #fbf8f1;
+}
+
+.grid-cell.is-sunday {
+  background: #f9f4ea;
+}
+
+.grid-cell.is-last-of-group {
+  border-bottom-color: var(--line);
+}
+
+.grid-cell.is-last-row {
+  border-bottom: 0;
+}
+
+.grid-cell.is-last-row.is-last-col {
+  border-bottom-right-radius: var(--radius-lg);
 }
 
 button.grid-cell {
@@ -569,52 +712,86 @@ button.grid-cell:active {
   box-shadow: inset 0 0 0 2px var(--forest);
 }
 
-.grid-head.is-weekend,
-.grid-cell.is-weekend {
-  background: var(--surface-warm);
+/* Colonne du jour ------------------------------------------------------------ */
+
+.today-veil {
+  z-index: 1;
+  pointer-events: none;
+  background: rgba(199, 154, 58, 0.11);
 }
 
-.grid-cell.is-weekend {
-  background: #faf6ee;
+/* Les deux filets restent lisibles par-dessus les blocs : la colonne du jour
+   traverse vraiment tout le planning, pas seulement l'en-tete. */
+.today-rule {
+  z-index: 4;
+  pointer-events: none;
+  box-shadow: inset 1px 0 0 rgba(184, 138, 42, 0.6), inset -1px 0 0 rgba(184, 138, 42, 0.6);
 }
 
-.grid-head.is-today {
-  background: var(--gold-soft);
-  box-shadow: inset 0 3px 0 var(--gold);
-}
-
-.grid-cell.is-today {
-  background: var(--gold-soft);
-}
+/* Blocs de reservation -------------------------------------------------------- */
 
 .grid-block {
-  z-index: 2;
-  border: 0;
-  border-radius: var(--radius-sm);
-  padding: 0 12px;
+  position: relative;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
   margin: 0 3px;
-  color: #fff;
+  padding: 0 10px 0 9px;
+  border: 0;
+  border-left: 5px solid var(--spot-color);
+  border-radius: var(--radius-sm);
+  background: var(--spot-tint);
+  color: var(--spot-ink);
   font-size: 17px;
   font-weight: 700;
   letter-spacing: -0.005em;
   text-align: left;
   cursor: pointer;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 1px 3px rgba(43, 39, 35, 0.25);
-  transition: filter 0.1s ease;
+  box-shadow: 0 1px 2px rgba(43, 39, 35, 0.1);
+  transition: transform 0.13s ease, box-shadow 0.13s ease, filter 0.13s ease;
   -webkit-tap-highlight-color: transparent;
 }
 
 .grid-block:active {
-  filter: brightness(1.12);
+  transform: scale(0.98);
+  filter: brightness(0.985) saturate(1.2);
+  box-shadow: inset 0 0 0 2px var(--spot-color), 0 1px 2px rgba(43, 39, 35, 0.16);
+}
+
+.grid-block:focus-visible {
+  outline: 3px solid var(--spot-color);
+  outline-offset: 1px;
+}
+
+/* Une seule nuit : le bloc fait la largeur d'une colonne. Marges reduites,
+   texte centre et raccourci (voir blockLabel) : jamais de debordement. */
+.grid-block.is-short {
+  justify-content: center;
+  padding: 0 2px;
+  border-left-width: 4px;
+  font-size: 15px;
+  letter-spacing: -0.02em;
 }
 
 .block-text {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Icone de l'emplacement en filigrane, seulement quand la place le permet */
+.block-mark {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--spot-color);
+  opacity: 0.16;
+  pointer-events: none;
 }
 
 .clipped-left {
@@ -627,6 +804,16 @@ button.grid-cell:active {
   border-top-right-radius: 3px;
   border-bottom-right-radius: 3px;
   margin-right: 0;
+}
+
+.planning-empty {
+  margin: 14px 0 0;
+  padding: 14px 18px;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--radius);
+  background: #fdfbf7;
+  color: var(--ink-2);
+  font-size: 16px;
 }
 
 .planning-hint,
@@ -744,11 +931,38 @@ button.grid-cell:active {
   background: #8fbf9c;
 }
 
+.bilan-group {
+  margin-top: 24px;
+}
+
+.bilan-group-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 0 4px 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.17em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.bilan-group-total {
+  flex: none;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  text-transform: none;
+  color: var(--ink);
+}
+
 .spot-cards {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
   gap: 16px;
-  margin-top: 18px;
 }
 
 .spot-card {
@@ -769,14 +983,6 @@ button.grid-cell:active {
   background: var(--spot-color);
 }
 
-.spot-card.is-empty {
-  background: #fdfbf7;
-}
-
-.spot-card.is-empty .spot-card-total {
-  color: var(--ink-3);
-}
-
 .spot-card-head {
   display: flex;
   align-items: center;
@@ -785,8 +991,15 @@ button.grid-cell:active {
 }
 
 .spot-card-icon {
-  color: var(--spot-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 38px;
   flex: none;
+  border-radius: 11px;
+  background: var(--spot-tint);
+  color: var(--spot-color);
 }
 
 .spot-card-name {
@@ -801,6 +1014,19 @@ button.grid-cell:active {
   font-weight: 700;
   letter-spacing: -0.025em;
   line-height: 1.1;
+  color: var(--spot-ink);
+}
+
+.spot-card.is-empty {
+  background: #fdfbf7;
+}
+
+.spot-card.is-empty .spot-card-total {
+  color: var(--ink-3);
+}
+
+.spot-card.is-empty .spot-card-icon {
+  opacity: 0.65;
 }
 
 .spot-card-detail {

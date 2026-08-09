@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { SPOTS } from '../constants'
+import { SPOT_GROUPS } from '../constants'
 import { formatEur } from '../utils/money'
 import { extrasTotal, reservationsOfMonth } from '../utils/reservations'
 import MonthNav from './MonthNav'
@@ -10,10 +10,10 @@ export default function Bilan({ reservations }) {
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth())
 
-  const { cards, grand } = useMemo(() => {
+  const { groups, cards, grand } = useMemo(() => {
     const ofMonth = reservationsOfMonth(reservations, year, month)
 
-    const cards = SPOTS.map((spot) => {
+    const carte = (spot) => {
       const list = ofMonth.filter((r) => r.roomId === spot.id)
       return {
         spot,
@@ -21,7 +21,10 @@ export default function Bilan({ reservations }) {
         extras: list.reduce((s, r) => s + extrasTotal(r.extras), 0),
         total: list.reduce((s, r) => s + (Number(r.total) || 0), 0),
       }
-    })
+    }
+
+    const groups = SPOT_GROUPS.map((g) => ({ ...g, cards: g.spots.map(carte) }))
+    const cards = groups.flatMap((g) => g.cards)
 
     const somme = (predicate) =>
       ofMonth.filter(predicate).reduce((s, r) => s + (Number(r.total) || 0), 0)
@@ -31,6 +34,7 @@ export default function Bilan({ reservations }) {
     const especes = somme((r) => r.paymentMethod === 'especes')
 
     return {
+      groups,
       cards,
       grand: {
         count: ofMonth.length,
@@ -84,35 +88,50 @@ export default function Bilan({ reservations }) {
         </div>
       </section>
 
-      <div className="spot-cards">
-        {cards.map((c) => (
-          <article
-            key={c.spot.id}
-            className={'spot-card' + (c.count === 0 ? ' is-empty' : '')}
-            style={{ '--spot-color': c.spot.color }}
-          >
-            <header className="spot-card-head">
-              <span className="spot-card-icon">
-                <SpotIcon type={c.spot.icon} size={30} />
-              </span>
-              <h3 className="spot-card-name">{c.spot.name}</h3>
-            </header>
+      {groups.map((g) => (
+        <section className="bilan-group" key={g.id}>
+          <h2 className="bilan-group-title">
+            <span>{g.label}</span>
+            <span className="bilan-group-total">
+              {formatEur(g.cards.reduce((s, c) => s + c.total, 0))}
+            </span>
+          </h2>
 
-            <p className="spot-card-total">{formatEur(c.total)}</p>
+          <div className="spot-cards">
+            {g.cards.map((c) => (
+              <article
+                key={c.spot.id}
+                className={'spot-card' + (c.count === 0 ? ' is-empty' : '')}
+                style={{
+                  '--spot-color': c.spot.color,
+                  '--spot-tint': c.spot.tint,
+                  '--spot-ink': c.spot.ink,
+                }}
+              >
+                <header className="spot-card-head">
+                  <span className="spot-card-icon">
+                    <SpotIcon type={c.spot.icon} size={30} />
+                  </span>
+                  <h3 className="spot-card-name">{c.spot.name}</h3>
+                </header>
 
-            <dl className="spot-card-detail">
-              <div>
-                <dt>Réservations</dt>
-                <dd>{c.count}</dd>
-              </div>
-              <div>
-                <dt>Dont extras</dt>
-                <dd>{formatEur(c.extras)}</dd>
-              </div>
-            </dl>
-          </article>
-        ))}
-      </div>
+                <p className="spot-card-total">{formatEur(c.total)}</p>
+
+                <dl className="spot-card-detail">
+                  <div>
+                    <dt>Réservations</dt>
+                    <dd>{c.count}</dd>
+                  </div>
+                  <div>
+                    <dt>Dont extras</dt>
+                    <dd>{formatEur(c.extras)}</dd>
+                  </div>
+                </dl>
+              </article>
+            ))}
+          </div>
+        </section>
+      ))}
 
       <p className="bilan-hint">
         Une réservation est comptée dans le mois de sa date d’arrivée, pour la totalité de son

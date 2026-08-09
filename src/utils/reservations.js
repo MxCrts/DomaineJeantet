@@ -56,8 +56,10 @@ export function overlaps(arrivalA, departureA, arrivalB, departureB) {
 
 /**
  * Réservations du MÊME emplacement qui chevauchent la période donnée.
- * En édition, `id` est celui de la réservation en cours : elle est exclue du
- * test (une réservation ne peut pas être en conflit avec elle-même).
+ * `id` est celui de la réservation en cours d'édition ou de création : elle est
+ * exclue du test (une réservation ne peut jamais être en conflit avec
+ * elle-même). En création, cet id est inconnu jusqu'à l'écriture, puis connu
+ * dès que Firestore l'a attribué : voir formConflicts ci-dessous.
  */
 export function findConflicts(reservations, { id, roomId, arrival, departure }) {
   if (!roomId || !arrival || !departure) return []
@@ -67,6 +69,34 @@ export function findConflicts(reservations, { id, roomId, arrival, departure }) 
       r.roomId === roomId &&
       overlaps(arrival, departure, r.arrival, r.departure)
   )
+}
+
+/**
+ * Conflits à SIGNALER dans le formulaire.
+ *
+ * Différence avec findConflicts : on tient compte de l'enregistrement en cours.
+ * Firestore renvoie la réservation qu'on vient d'écrire par onSnapshot (echo
+ * local, avant même la réponse du serveur). Sans précaution, le formulaire
+ * comparait cette réservation toute fraîche à elle-même et affichait
+ * « Impossible : ... est déjà réservé ... » alors que l'enregistrement venait
+ * de réussir. Deux garde-fous, l'un couvrant l'autre :
+ *
+ *   1. `saving` : pendant l'écriture, on ne signale plus rien — l'id n'est pas
+ *      encore connu, aucune comparaison n'est fiable.
+ *   2. `savedId` : dès que Firestore a attribué l'id, il remplace celui de
+ *      l'édition et la réservation s'exclut elle-même comme en modification.
+ */
+export function formConflicts(
+  reservations,
+  { id, savedId, roomId, arrival, departure, saving }
+) {
+  if (saving) return []
+  return findConflicts(reservations, {
+    id: savedId || id || null,
+    roomId,
+    arrival,
+    departure,
+  })
 }
 
 /** Message d'erreur explicite listant les conflits trouvés. */
@@ -81,6 +111,23 @@ export function conflictMessage(spotLabel, conflicts) {
     )
     .join(', et ')
   return `Impossible : ${spotLabel} est déjà réservé ${details}.`
+}
+
+/**
+ * Texte affiché dans un bloc du planning, selon sa largeur en nuits.
+ *
+ * Un bloc d'une seule nuit fait la largeur d'une colonne (~40 px) : un nom
+ * entier n'y tient pas et se ferait couper n'importe où. On y met donc les
+ * initiales (« Jean Dupont » -> « JD ») ou les deux premières lettres
+ * (« Dupont » -> « Du »). Le nom complet reste dans l'infobulle du bloc.
+ */
+export function blockLabel(clientName, span) {
+  const name = String(clientName || '').trim()
+  if (!name) return span >= 2 ? '(sans nom)' : '·'
+  if (span >= 2) return name
+  const mots = name.split(/\s+/)
+  if (mots.length >= 2) return (mots[0][0] + mots[1][0]).toUpperCase()
+  return name.length <= 3 ? name : name.slice(0, 2)
 }
 
 /** Règle du bilan : une réservation compte dans le mois de sa DATE D'ARRIVÉE. */

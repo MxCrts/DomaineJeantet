@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { dayNumber, overlaps, findConflicts, assignLanes } from './reservations'
+import {
+  assignLanes,
+  blockLabel,
+  dayNumber,
+  findConflicts,
+  formConflicts,
+  overlaps,
+} from './reservations'
 
 /** Raccourci : d(2025, 8, 11) = 11 août 2025 (mois en clair, pas en index). */
 function d(year, month, day) {
@@ -159,6 +166,77 @@ describe('findConflicts', () => {
       departure: d(2025, 8, 20),
     })
     expect(found).toHaveLength(2)
+  })
+})
+
+describe('formConflicts — une création ne se compare jamais à elle-même', () => {
+  const existante = {
+    id: 'abc',
+    roomId: 'ch1',
+    clientName: 'Dupont',
+    arrival: d(2025, 8, 11),
+    departure: d(2025, 8, 12),
+  }
+
+  // Scénario du bug constaté en production : création sur des dates
+  // totalement libres, puis Firestore répercute le document tout juste écrit.
+  const saisie = {
+    id: undefined, // création : aucun id encore
+    savedId: null,
+    roomId: 'ch1',
+    arrival: d(2025, 8, 20),
+    departure: d(2025, 8, 22),
+    saving: false,
+  }
+  const creee = {
+    id: 'doc-neuf',
+    roomId: 'ch1',
+    clientName: 'Durand',
+    arrival: saisie.arrival,
+    departure: saisie.departure,
+  }
+
+  it('avant l’enregistrement : les dates sont libres, rien n’est signalé', () => {
+    expect(formConflicts([existante], saisie)).toHaveLength(0)
+  })
+
+  it('pendant l’écriture : le document renvoyé par onSnapshot n’est pas un conflit', () => {
+    const apresEcho = [existante, creee]
+    expect(formConflicts(apresEcho, { ...saisie, saving: true })).toHaveLength(0)
+  })
+
+  it('après l’enregistrement : l’id attribué exclut la réservation d’elle-même', () => {
+    const apresEcho = [existante, creee]
+    expect(formConflicts(apresEcho, { ...saisie, savedId: 'doc-neuf' })).toHaveLength(0)
+  })
+
+  it('sans ces deux garde-fous, la réservation se verrait bien elle-même', () => {
+    // Ce que faisait l'ancien code : comparer sans id -> faux conflit.
+    expect(findConflicts([existante, creee], saisie)).toHaveLength(1)
+  })
+
+  it('un vrai conflit reste signalé, avant comme après un enregistrement', () => {
+    const autre = { ...creee, id: 'autre-client', clientName: 'Martin' }
+    expect(formConflicts([existante, autre], saisie)).toHaveLength(1)
+    expect(formConflicts([existante, autre], { ...saisie, savedId: 'doc-neuf' })).toHaveLength(1)
+  })
+})
+
+describe('blockLabel', () => {
+  it('affiche le nom complet dès deux nuits', () => {
+    expect(blockLabel('Jean Dupont', 2)).toBe('Jean Dupont')
+    expect(blockLabel('Dupont', 5)).toBe('Dupont')
+  })
+
+  it('réduit proprement une réservation d’une seule nuit', () => {
+    expect(blockLabel('Jean Dupont', 1)).toBe('JD')
+    expect(blockLabel('Dupont', 1)).toBe('Du')
+    expect(blockLabel('Li', 1)).toBe('Li')
+  })
+
+  it('supporte un nom vide', () => {
+    expect(blockLabel('', 3)).toBe('(sans nom)')
+    expect(blockLabel(null, 1)).toBe('·')
   })
 })
 
