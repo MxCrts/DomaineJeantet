@@ -5,6 +5,7 @@ import { describe, it, expect } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import Planning from './Planning'
 import Bilan from './Bilan'
+import Export from './Export'
 import ReservationForm from './ReservationForm'
 
 // Reservations datees en aout 2025 : servent aux tests du formulaire, qui ne
@@ -113,6 +114,33 @@ describe('rendu des écrans', () => {
     expect(html).toContain('Hébergements')
     // Sous-total du groupe « Hébergements » : les 120 € de La Bulle
     expect(html).toContain('120,00')
+  })
+
+  it('l’export affiche la feuille imprimable détaillée du mois en cours', () => {
+    const html = renderToStaticMarkup(<Export reservations={CE_MOIS} />)
+    expect(html).toContain('Domaine Jeantet — Réservations du')
+    expect(html).toContain('print-sheet')
+    // Une ligne par réservation, avec son détail
+    expect(html).toContain('Dupont')
+    expect(html).toContain('2 pizzas')
+    expect(html).toContain('Carte bancaire')
+    expect(html).toContain('Espèces')
+    // Synthèse et totaux
+    expect(html).toContain('Synthèse par emplacement')
+    expect(html).toContain('TOTAL GÉNÉRAL')
+    expect(html).toContain('178,00') // 58 + 120
+    // Les commandes ne partent pas à l'impression
+    expect(html).toContain('export-controls no-print')
+    expect(html).toContain('Ce mois-ci')
+    expect(html).toContain('Télécharger CSV')
+    expect(html).toContain('Imprimer / PDF')
+  })
+
+  it('l’export prévient au lieu de produire un fichier vide', () => {
+    const html = renderToStaticMarkup(<Export reservations={[]} />)
+    expect(html).toContain('Aucune réservation du')
+    expect(html).not.toContain('print-sheet')
+    expect(html).toContain('disabled') // les deux boutons d'export
   })
 
   it('le formulaire distingue création et modification', () => {

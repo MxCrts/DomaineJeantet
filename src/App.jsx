@@ -18,9 +18,16 @@ import { toDate } from './utils/dates'
 import Login from './components/Login'
 import Planning from './components/Planning'
 import Bilan from './components/Bilan'
+import Export from './components/Export'
 import ReservationForm from './components/ReservationForm'
 
 const RESERVATIONS = 'reservations'
+
+const TABS = [
+  { key: 'planning', label: 'Planning' },
+  { key: 'bilan', label: 'Bilan' },
+  { key: 'export', label: 'Export' },
+]
 
 export default function App() {
   const [user, setUser] = useState(null)
@@ -130,22 +137,19 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="app-header">
+      <header className="app-header no-print">
         <div className="app-brand">Domaine Jeantet</div>
 
         <nav className="tabs">
-          <button
-            className={'tab' + (tab === 'planning' ? ' tab-active' : '')}
-            onClick={() => setTab('planning')}
-          >
-            Planning
-          </button>
-          <button
-            className={'tab' + (tab === 'bilan' ? ' tab-active' : '')}
-            onClick={() => setTab('bilan')}
-          >
-            Bilan
-          </button>
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              className={'tab' + (tab === t.key ? ' tab-active' : '')}
+              onClick={() => setTab(t.key)}
+            >
+              {t.label}
+            </button>
+          ))}
         </nav>
 
         <button className="btn btn-ghost" onClick={() => signOut(auth)}>
@@ -153,15 +157,17 @@ export default function App() {
         </button>
       </header>
 
-      {dataError && <p className="alert alert-error app-alert">{dataError}</p>}
+      {dataError && <p className="alert alert-error app-alert no-print">{dataError}</p>}
 
       <main className="app-main">
         {!dataReady ? (
           <div className="app-loading">Chargement des réservations…</div>
         ) : tab === 'planning' ? (
           <Planning reservations={reservations} onOpenForm={setEditing} />
-        ) : (
+        ) : tab === 'bilan' ? (
           <Bilan reservations={reservations} />
+        ) : (
+          <Export reservations={reservations} />
         )}
       </main>
 
