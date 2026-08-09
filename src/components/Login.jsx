@@ -6,8 +6,13 @@ import {
 } from 'firebase/auth'
 import { auth, CONFIG_IS_PLACEHOLDER } from '../firebase'
 import { SPOTS } from '../constants'
+import EyeIcon from './EyeIcon'
 import FlagFR from './FlagFR'
 import SpotIcon from './SpotIcon'
+
+// Codes d'erreur qui veulent tous dire « ce couple e-mail / mot de passe ne
+// correspond a aucun compte ». C'est le cas ou l'aide ci-dessous est utile.
+const CODES_IDENTIFIANTS = ['auth/user-not-found', 'auth/wrong-password', 'auth/invalid-credential']
 
 // Traduction des codes d'erreur Firebase en français simple.
 function messageErreur(code) {
@@ -32,12 +37,20 @@ function messageErreur(code) {
 export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
+  const [aideIdentifiants, setAideIdentifiants] = useState(false)
   const [busy, setBusy] = useState(false)
+
+  // Les claviers tactiles ajoutent facilement une espace en trop (barre
+  // d'espace, ou espace automatique apres une suggestion). Invisible a l'oeil,
+  // y compris mot de passe affiché : on le dit donc explicitement.
+  const espaceParasite = password !== password.trim()
 
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
+    setAideIdentifiants(false)
 
     if (!email.trim() || !password) {
       setError('Merci de remplir l’adresse e-mail et le mot de passe.')
@@ -48,9 +61,13 @@ export default function Login() {
     try {
       // Session conservée sur la tablette : pas de reconnexion chaque jour.
       await setPersistence(auth, browserLocalPersistence)
-      await signInWithEmailAndPassword(auth, email.trim(), password)
+      // L'adresse est nettoyée et mise en minuscules : sur tablette, le clavier
+      // met volontiers une majuscule au premier caractère.
+      await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password)
     } catch (err) {
-      setError(messageErreur(err && err.code))
+      const code = err && err.code
+      setError(messageErreur(code))
+      setAideIdentifiants(CODES_IDENTIFIANTS.indexOf(code) !== -1)
       setBusy(false)
     }
   }
@@ -85,8 +102,10 @@ export default function Login() {
           <input
             className="field-input"
             type="email"
+            inputMode="email"
             autoComplete="username"
             autoCapitalize="none"
+            autoCorrect="off"
             spellCheck="false"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -95,16 +114,57 @@ export default function Login() {
 
         <label className="field">
           <span className="field-label">Mot de passe</span>
-          <input
-            className="field-input"
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
+          <div className="password-field">
+            <input
+              className="field-input"
+              type={showPassword ? 'text' : 'password'}
+              autoComplete="current-password"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck="false"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+            {/* type="button" : sinon un appui enverrait le formulaire. */}
+            <button
+              type="button"
+              className={'btn btn-reveal' + (showPassword ? ' is-on' : '')}
+              onClick={() => setShowPassword((v) => !v)}
+              aria-pressed={showPassword}
+              aria-label={showPassword ? 'Masquer le mot de passe' : 'Voir le mot de passe'}
+              title={showPassword ? 'Masquer le mot de passe' : 'Voir le mot de passe'}
+            >
+              <EyeIcon off={showPassword} size={25} />
+            </button>
+          </div>
         </label>
 
+        {espaceParasite && (
+          <p className="alert alert-warning login-espace">
+            Votre mot de passe commence ou se termine par une espace. C’est presque toujours la
+            barre d’espace du clavier tactile : effacez-la avant de vous connecter.
+          </p>
+        )}
+
         {error && <p className="alert alert-error">{error}</p>}
+
+        {aideIdentifiants && (
+          <div className="login-aide">
+            <p className="login-aide-titre">Ça marche sur l’ordinateur mais pas ici ?</p>
+            <ul>
+              <li>
+                Touchez l’œil pour <strong>relire ce que vous avez tapé</strong> : le clavier de la
+                tablette corrige et met des majuscules tout seul.
+              </li>
+              <li>
+                Vérifiez qu’il n’y a <strong>pas d’espace</strong> avant ou après le mot de passe.
+              </li>
+              <li>
+                Si le mot de passe s’est rempli tout seul, effacez-le complètement et retapez-le.
+              </li>
+            </ul>
+          </div>
+        )}
 
         <button className="btn btn-primary btn-block" type="submit" disabled={busy}>
           {busy ? 'Connexion…' : 'Se connecter'}
