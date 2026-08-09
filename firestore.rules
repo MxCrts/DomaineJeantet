@@ -1,0 +1,25 @@
+rules_version = '2';
+
+// Regles de securite Firestore - Domaine Jeantet
+//
+// Principe : seul un utilisateur authentifie (le compte partage cree a la main
+// dans la console Firebase) peut lire et ecrire les reservations.
+// Tout le reste est refuse.
+//
+// /!\ ETAPE MANUELLE : ces regles doivent etre PUBLIEES dans la console Firebase
+//     (Firestore Database > Regles > Publier). Le fichier dans le repo ne suffit pas.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Les reservations : lecture / ecriture uniquement si connecte
+    match /reservations/{reservationId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Tout le reste est interdit
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
