@@ -5,6 +5,8 @@ import {
   browserLocalPersistence,
 } from 'firebase/auth'
 import { auth, CONFIG_IS_PLACEHOLDER } from '../firebase'
+import { SPOTS } from '../constants'
+import SpotIcon from './SpotIcon'
 
 // Traduction des codes d'erreur Firebase en français simple.
 function messageErreur(code) {
@@ -57,6 +59,14 @@ export default function Login() {
       <form className="login-card" onSubmit={handleSubmit}>
         <h1 className="login-title">Domaine Jeantet</h1>
         <p className="login-subtitle">Gestion des réservations</p>
+
+        <div className="login-spots" aria-hidden="true">
+          {SPOTS.map((s) => (
+            <span key={s.id} className="login-spot" style={{ color: s.color }}>
+              <SpotIcon type={s.icon} size={30} />
+            </span>
+          ))}
+        </div>
 
         {CONFIG_IS_PLACEHOLDER && (
           <p className="alert alert-warning">

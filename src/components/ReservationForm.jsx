@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
-import { PAYMENT_METHODS, ROOMS, roomName } from '../constants'
+import { PAYMENT_METHODS, SPOTS, getSpot, spotName } from '../constants'
 import { formatDateFr, fromInputValue, nights, toInputValue } from '../utils/dates'
 import { formatEur, parseAmount } from '../utils/money'
-import { autoTotal, extrasTotal, findOverlapping } from '../utils/reservations'
+import { autoTotal, conflictMessage, extrasTotal, findConflicts } from '../utils/reservations'
+import SpotIcon from './SpotIcon'
 
 /** Nombre -> texte de saisie français ("12.5" -> "12,5"). */
 function numToInput(n) {
@@ -22,11 +23,11 @@ export default function ReservationForm({ initial, reservations, onSave, onDelet
   const isEdit = !!initial.id
 
   const [clientName, setClientName] = useState(initial.clientName || '')
-  const [roomId, setRoomId] = useState(initial.roomId || ROOMS[0].id)
+  const [roomId, setRoomId] = useState(initial.roomId || SPOTS[0].id)
   const [arrivalStr, setArrivalStr] = useState(toInputValue(initial.arrival))
   const [departureStr, setDepartureStr] = useState(toInputValue(initial.departure))
   const [basePrice, setBasePrice] = useState(
-    initial.basePrice !== undefined && isEdit ? numToInput(initial.basePrice) : ''
+    isEdit && initial.basePrice !== undefined ? numToInput(initial.basePrice) : ''
   )
   const [extras, setExtras] = useState(() =>
     (initial.extras || []).map((e) => makeExtra(e.label, e.amount))
@@ -43,21 +44,26 @@ export default function ReservationForm({ initial, reservations, onSave, onDelet
 
   const arrival = fromInputValue(arrivalStr)
   const departure = fromInputValue(departureStr)
+  const spot = getSpot(roomId) || SPOTS[0]
 
   const computedTotal = autoTotal(basePrice, extras)
   const total = totalIsManual ? parseAmount(manualTotal) : computedTotal
   const totalFieldValue = totalIsManual ? manualTotal : numToInput(computedTotal)
 
   const nbNights = arrival && departure ? nights(arrival, departure) : 0
+  const datesValides = !!arrival && !!departure && departure > arrival
 
-  // Avertissement non bloquant : chevauchement sur la même chambre.
+  // Conflit d'occupation : BLOQUANT. Recalculé à chaque frappe.
   const conflicts = useMemo(() => {
-    if (!arrival || !departure || departure <= arrival) return []
-    return findOverlapping(reservations, { id: initial.id, roomId, arrival, departure })
-  }, [reservations, initial.id, roomId, arrivalStr, departureStr])
+    if (!datesValides) return []
+    return findConflicts(reservations, { id: initial.id, roomId, arrival, departure })
+  }, [reservations, initial.id, roomId, arrivalStr, departureStr, datesValides])
 
-  // Si on recule la date d'arrivee apres le depart, on decale le depart d'une
-  // nuit : evite de laisser le formulaire dans un etat en erreur.
+  const conflictText = conflictMessage(spotName(roomId), conflicts)
+  const saveBloque = conflicts.length > 0
+
+  // Si l'arrivée passe après le départ, on décale le départ d'une nuit :
+  // évite de laisser le formulaire coincé dans un état en erreur.
   function changeArrival(value) {
     setArrivalStr(value)
     const a = fromInputValue(value)
@@ -92,6 +98,17 @@ export default function ReservationForm({ initial, reservations, onSave, onDelet
     }
     if (departure <= arrival) {
       setError('La date de départ doit être après la date d’arrivée.')
+      return
+    }
+    // Dernière vérification avant écriture : le conflit interdit d'enregistrer.
+    const conflitsMaintenant = findConflicts(reservations, {
+      id: initial.id,
+      roomId,
+      arrival,
+      departure,
+    })
+    if (conflitsMaintenant.length > 0) {
+      setError(conflictMessage(spotName(roomId), conflitsMaintenant))
       return
     }
 
@@ -134,11 +151,19 @@ export default function ReservationForm({ initial, reservations, onSave, onDelet
 
   return (
     <div className="modal-overlay">
-      <div className="modal" role="dialog" aria-modal="true">
+      <div className={'modal' + (isEdit ? ' modal-edit' : ' modal-new')} role="dialog" aria-modal="true">
         <div className="modal-header">
-          <h2 className="modal-title">
-            {isEdit ? 'Modifier la réservation' : 'Nouvelle réservation'}
-          </h2>
+          <span className="modal-icon" style={{ color: spot.color }}>
+            <SpotIcon type={spot.icon} size={34} />
+          </span>
+          <div className="modal-heading">
+            <span className="modal-mode">{isEdit ? 'Modification' : 'Création'}</span>
+            <h2 className="modal-title">
+              {isEdit
+                ? `Modifier la réservation — ${initial.clientName || 'sans nom'}`
+                : 'Nouvelle réservation'}
+            </h2>
+          </div>
           <button className="btn btn-close" onClick={onClose} aria-label="Fermer">
             ✕
           </button>
@@ -158,18 +183,23 @@ export default function ReservationForm({ initial, reservations, onSave, onDelet
 
           <div className="field-row">
             <label className="field">
-              <span className="field-label">Chambre</span>
-              <select
-                className="field-input"
-                value={roomId}
-                onChange={(e) => setRoomId(e.target.value)}
-              >
-                {ROOMS.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name}
-                  </option>
-                ))}
-              </select>
+              <span className="field-label">Emplacement</span>
+              <div className="select-with-icon" style={{ '--spot-color': spot.color }}>
+                <span className="select-icon">
+                  <SpotIcon type={spot.icon} size={26} />
+                </span>
+                <select
+                  className="field-input"
+                  value={roomId}
+                  onChange={(e) => setRoomId(e.target.value)}
+                >
+                  {SPOTS.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </label>
 
             <label className="field">
@@ -213,17 +243,11 @@ export default function ReservationForm({ initial, reservations, onSave, onDelet
           {nbNights > 0 && (
             <p className="field-note">
               {nbNights} nuit{nbNights > 1 ? 's' : ''} — du {formatDateFr(arrival)} au{' '}
-              {formatDateFr(departure)}
+              {formatDateFr(departure)} (l’emplacement est libre le jour du départ)
             </p>
           )}
 
-          {conflicts.length > 0 && (
-            <p className="alert alert-warning">
-              Attention : chevauche la réservation de{' '}
-              {conflicts.map((c) => c.clientName || '(sans nom)').join(', ')} (
-              {roomName(roomId)}).
-            </p>
-          )}
+          {conflictText && <p className="alert alert-error">{conflictText}</p>}
 
           <label className="field">
             <span className="field-label">Prix du séjour (€)</span>
@@ -244,7 +268,7 @@ export default function ReservationForm({ initial, reservations, onSave, onDelet
               )}
             </div>
 
-            {extras.length === 0 && <p className="field-note">Aucun extra.</p>}
+            {extras.length === 0 && <p className="field-note extras-empty">Aucun extra.</p>}
 
             {extras.map((e) => (
               <div className="extra-row" key={e.key}>
@@ -264,7 +288,7 @@ export default function ReservationForm({ initial, reservations, onSave, onDelet
                   onChange={(ev) => updateExtra(e.key, { amount: ev.target.value })}
                 />
                 <button
-                  className="btn btn-danger-ghost extra-remove"
+                  className="btn btn-icon-danger extra-remove"
                   onClick={() => removeExtra(e.key)}
                   aria-label="Supprimer cet extra"
                 >
@@ -273,14 +297,14 @@ export default function ReservationForm({ initial, reservations, onSave, onDelet
               </div>
             ))}
 
-            <button className="btn btn-secondary" onClick={addExtra}>
+            <button className="btn btn-secondary btn-add-extra" onClick={addExtra}>
               + Ajouter un extra
             </button>
           </div>
 
           <div className="total-box">
             <label className="field total-field">
-              <span className="field-label">Total (€)</span>
+              <span className="field-label">Total à payer (€)</span>
               <input
                 className="field-input total-input"
                 type="text"
@@ -307,12 +331,16 @@ export default function ReservationForm({ initial, reservations, onSave, onDelet
                   </button>
                 </>
               ) : (
-                <span>Calculé automatiquement : prix du séjour + extras.</span>
+                <span>
+                  Calcul automatique : prix du séjour + extras.
+                  <br />
+                  Vous pouvez corriger ce montant à la main.
+                </span>
               )}
             </div>
           </div>
 
-          {error && <p className="alert alert-error">{error}</p>}
+          {error && error !== conflictText && <p className="alert alert-error">{error}</p>}
         </div>
 
         <div className="modal-footer">
@@ -329,7 +357,7 @@ export default function ReservationForm({ initial, reservations, onSave, onDelet
               </div>
             ) : (
               <button
-                className="btn btn-danger-ghost"
+                className="btn btn-danger-soft"
                 onClick={() => setConfirmDelete(true)}
                 disabled={busy}
               >
@@ -341,7 +369,12 @@ export default function ReservationForm({ initial, reservations, onSave, onDelet
             <button className="btn btn-ghost" onClick={onClose} disabled={busy}>
               Annuler
             </button>
-            <button className="btn btn-primary" onClick={handleSave} disabled={busy}>
+            <button
+              className="btn btn-primary"
+              onClick={handleSave}
+              disabled={busy || saveBloque}
+              title={saveBloque ? conflictText : undefined}
+            >
               {busy ? 'Enregistrement…' : 'Enregistrer'}
             </button>
           </div>

@@ -1,7 +1,11 @@
 import { useMemo, useState } from 'react'
-import { ROOMS } from '../constants'
+import { SPOTS } from '../constants'
 import { addDays, daysInMonth, DAY_LETTERS, isSameDay, isWeekend } from '../utils/dates'
+import { assignLanes } from '../utils/reservations'
 import MonthNav from './MonthNav'
+import SpotIcon from './SpotIcon'
+
+const GAP = 4 // espace en pixels autour d'un bloc dans sa ligne
 
 export default function Planning({ reservations, onOpenForm }) {
   const now = new Date()
@@ -15,36 +19,42 @@ export default function Planning({ reservations, onOpenForm }) {
   )
 
   // Un bloc par réservation visible dans le mois affiché.
-  // Convention : le bloc couvre les NUITS occupées, donc du jour d'arrivée
-  // jusqu'à la veille du départ (le jour du départ, la chambre est libre).
+  // Le bloc couvre les NUITS occupées : du jour d'arrivée à la veille du départ
+  // (le jour du départ, l'emplacement est de nouveau libre).
   const blocks = useMemo(() => {
     const monthStart = new Date(year, month, 1)
     const monthEnd = new Date(year, month, nbDays)
     const out = []
 
-    reservations.forEach((r) => {
-      const rowIndex = ROOMS.findIndex((room) => room.id === r.roomId)
-      if (rowIndex === -1) return
-      const lastNight = addDays(r.departure, -1)
-      if (r.arrival > monthEnd || lastNight < monthStart) return
+    SPOTS.forEach((spot, rowIndex) => {
+      const forSpot = []
+      reservations.forEach((r) => {
+        if (r.roomId !== spot.id) return
+        const lastNight = addDays(r.departure, -1)
+        if (r.arrival > monthEnd || lastNight < monthStart) return
 
-      const startDay = r.arrival < monthStart ? 1 : r.arrival.getDate()
-      const endDay = lastNight > monthEnd ? nbDays : lastNight.getDate()
-      if (endDay < startDay) return
+        const startDay = r.arrival < monthStart ? 1 : r.arrival.getDate()
+        const endDay = lastNight > monthEnd ? nbDays : lastNight.getDate()
+        if (endDay < startDay) return
 
-      out.push({
-        reservation: r,
-        rowIndex,
-        startDay,
-        endDay,
-        clippedLeft: r.arrival < monthStart,
-        clippedRight: lastNight > monthEnd,
+        forSpot.push({
+          reservation: r,
+          spot,
+          rowIndex,
+          startDay,
+          endDay,
+          clippedLeft: r.arrival < monthStart,
+          clippedRight: lastNight > monthEnd,
+        })
       })
+      // Si d'anciennes données se chevauchent, on les empile au lieu d'en
+      // cacher une derrière l'autre.
+      out.push(...assignLanes(forSpot))
     })
     return out
   }, [reservations, year, month, nbDays])
 
-  // Cases occupées : on n'affiche pas de case vide cliquable en dessous d'un bloc.
+  // Cases occupées : pas de case vide cliquable sous un bloc.
   const occupied = useMemo(() => {
     const set = new Set()
     blocks.forEach((b) => {
@@ -54,8 +64,20 @@ export default function Planning({ reservations, onOpenForm }) {
   }, [blocks])
 
   const gridStyle = {
-    gridTemplateColumns: `var(--room-col) repeat(${nbDays}, minmax(var(--day-w), 1fr))`,
-    gridTemplateRows: `var(--head-h) repeat(${ROOMS.length}, var(--row-h))`,
+    gridTemplateColumns: `var(--spot-col) repeat(${nbDays}, minmax(var(--day-w), 1fr))`,
+    gridTemplateRows: `var(--head-h) repeat(${SPOTS.length}, var(--row-h))`,
+  }
+
+  // Hauteur d'un bloc dans sa ligne. Avec une seule voie (cas normal) le bloc
+  // occupe toute la hauteur moins les marges ; s'il y a plusieurs voies, la
+  // hauteur est divisee et le bloc est decale vers le bas de sa voie.
+  function blockGeometry(lane, laneCount) {
+    const h = `(var(--row-h) - ${(laneCount + 1) * GAP}px) / ${laneCount}`
+    return {
+      alignSelf: 'start',
+      height: `calc(${h})`,
+      marginTop: `calc(${lane} * (${h} + ${GAP}px) + ${GAP}px)`,
+    }
   }
 
   return (
@@ -73,7 +95,7 @@ export default function Planning({ reservations, onOpenForm }) {
         <div className="planning-grid" style={gridStyle}>
           {/* Coin haut-gauche */}
           <div className="grid-corner" style={{ gridRow: 1, gridColumn: 1 }}>
-            Chambres
+            Emplacements
           </div>
 
           {/* En-tête : numéros de jours */}
@@ -87,38 +109,47 @@ export default function Planning({ reservations, onOpenForm }) {
               }
               style={{ gridRow: 1, gridColumn: i + 2 }}
             >
-              <div className="head-day">{d.getDate()}</div>
               <div className="head-letter">{DAY_LETTERS[d.getDay()]}</div>
+              <div className="head-day">{d.getDate()}</div>
             </div>
           ))}
 
-          {/* Colonne des chambres */}
-          {ROOMS.map((room, r) => (
+          {/* Colonne des emplacements */}
+          {SPOTS.map((spot, r) => (
             <div
-              key={room.id}
-              className="grid-room"
-              style={{ gridRow: r + 2, gridColumn: 1, borderLeftColor: room.color }}
+              key={spot.id}
+              className="grid-spot"
+              style={{ gridRow: r + 2, gridColumn: 1, '--spot-color': spot.color }}
             >
-              {room.name}
+              <span className="grid-spot-icon">
+                <SpotIcon type={spot.icon} size={30} />
+              </span>
+              <span className="grid-spot-name">{spot.name}</span>
             </div>
           ))}
 
-          {/* Cases vides cliquables */}
-          {ROOMS.map((room, r) =>
+          {/* Cases du calendrier. Les cases libres sont des boutons (création),
+              les cases occupées de simples fonds : c'est le bloc posé par-dessus
+              qui est cliquable, et il ouvre la réservation en modification. */}
+          {SPOTS.map((spot, r) =>
             days.map((d, i) => {
-              if (occupied.has(`${r}:${i + 1}`)) return null
+              const className =
+                'grid-cell' +
+                (isWeekend(d) ? ' is-weekend' : '') +
+                (isSameDay(d, now) ? ' is-today' : '')
+              const style = { gridRow: r + 2, gridColumn: i + 2 }
+
+              if (occupied.has(`${r}:${i + 1}`)) {
+                return <div key={`${spot.id}-${i}`} className={className} style={style} />
+              }
               return (
                 <button
-                  key={`${room.id}-${i}`}
-                  className={
-                    'grid-cell' +
-                    (isWeekend(d) ? ' is-weekend' : '') +
-                    (isSameDay(d, now) ? ' is-today' : '')
-                  }
-                  style={{ gridRow: r + 2, gridColumn: i + 2 }}
-                  aria-label={`${room.name}, ${d.getDate()} — ajouter une réservation`}
+                  key={`${spot.id}-${i}`}
+                  className={className}
+                  style={style}
+                  aria-label={`${spot.name}, ${d.getDate()} — nouvelle réservation`}
                   onClick={() =>
-                    onOpenForm({ roomId: room.id, arrival: d, departure: addDays(d, 1) })
+                    onOpenForm({ roomId: spot.id, arrival: d, departure: addDays(d, 1) })
                   }
                 />
               )
@@ -126,38 +157,36 @@ export default function Planning({ reservations, onOpenForm }) {
           )}
 
           {/* Blocs de réservation */}
-          {blocks.map((b) => {
-            const room = ROOMS[b.rowIndex]
-            return (
-              <button
-                key={b.reservation.id}
-                className={
-                  'grid-block' +
-                  (b.clippedLeft ? ' clipped-left' : '') +
-                  (b.clippedRight ? ' clipped-right' : '')
-                }
-                style={{
-                  gridRow: b.rowIndex + 2,
-                  gridColumn: `${b.startDay + 1} / ${b.endDay + 2}`,
-                  backgroundColor: room.color,
-                }}
-                onClick={() => onOpenForm(b.reservation)}
-                title={b.reservation.clientName}
-              >
-                <span className="block-text">
-                  {b.clippedLeft ? '‹ ' : ''}
-                  {b.reservation.clientName || '(sans nom)'}
-                  {b.clippedRight ? ' ›' : ''}
-                </span>
-              </button>
-            )
-          })}
+          {blocks.map((b) => (
+            <button
+              key={b.reservation.id}
+              className={
+                'grid-block' +
+                (b.clippedLeft ? ' clipped-left' : '') +
+                (b.clippedRight ? ' clipped-right' : '')
+              }
+              style={{
+                gridRow: b.rowIndex + 2,
+                gridColumn: `${b.startDay + 1} / ${b.endDay + 2}`,
+                backgroundColor: b.spot.color,
+                ...blockGeometry(b.lane, b.laneCount),
+              }}
+              onClick={() => onOpenForm(b.reservation)}
+              title={`${b.reservation.clientName} — ${b.spot.name}`}
+            >
+              <span className="block-text">
+                {b.clippedLeft ? '‹ ' : ''}
+                {b.reservation.clientName || '(sans nom)'}
+                {b.clippedRight ? ' ›' : ''}
+              </span>
+            </button>
+          ))}
         </div>
       </div>
 
       <p className="planning-hint">
-        Touchez une case vide pour créer une réservation, ou une réservation existante pour la
-        modifier. Un séjour occupe la chambre de la nuit d’arrivée jusqu’à la veille du départ.
+        Touchez une case libre pour créer une réservation, ou une réservation existante pour la
+        modifier. Un séjour occupe l’emplacement de la nuit d’arrivée jusqu’à la veille du départ.
       </p>
     </div>
   )
